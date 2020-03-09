@@ -3,7 +3,7 @@
 #
 import os
 import sys
-gitpath=os.path.expanduser("~/git/cshl-work")
+gitpath=os.path.expanduser("~/git/cafa4")
 sys.path.append(gitpath)
 
 from cafa4.cafalib import CAFAPlugin
