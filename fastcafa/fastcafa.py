@@ -615,10 +615,10 @@ def do_prior(config, infile, outfile, usecache=True, species=None, version='curr
 
   
 
-def run_combine(config, predict1, predict2, outpred ):
+def run_combine(config, predict1, predict2, outpred, weight=1.0 ):
     """
     Takes two predictions, creates combined prediction, weighting the goterm scores
-    Where weight is not 1.0 (average betweeen p1 and p2), the input weight is the second 
+    Where weight is not 1.0 (average between p1 and p2), the input weight is the second 
     with respect to the first, i.e. the first 'perturbed' by the second. 
 
     Must be done *per cid*. Missing cids from one or the other are passed through unchanged.  
@@ -697,7 +697,14 @@ def run_combine(config, predict1, predict2, outpred ):
         cdf.rank_x = cdf.rank_x + 1
         cdf.rank_y = cdf.rank_y + 1    
         logging.debug(f"cdf is:\n{cdf}")
-        cdf['rank'] = ( cdf.rank_x + cdf.rank_y / 2 )
+        #cdf['rank'] = ( cdf.rank_x + cdf.rank_y / 2 )
+        # Perform weighted average of values:
+        #
+        #     ( 1 * rank_x) + ( weight * rank_y )
+        #     -------------------------------
+        #                1 + weight
+        #
+        cdf['rank'] = ( cdf.rank_x + ( cdf.rank_y * weight) ) /  ( 1 + weight ) 
 
         logging.debug(f"after calc cdf is:\n{cdf}")        
         dropcol = ['score_x', 'rank_x','score_y','rank_y' ] 
@@ -718,6 +725,7 @@ def run_combine(config, predict1, predict2, outpred ):
 
     logging.debug(f"topdf after all=\n{topdf}")
     topdf.to_csv(outpred)
+    return topdf
 
 
 
@@ -2952,6 +2960,13 @@ if __name__ == '__main__':
                                default=None, 
                                type=str, 
                                help='a DF .csv prediction file')
+
+    parser_combine.add_argument('-w','--weight', 
+                               metavar='weight', 
+                               type=float,
+                               default=1.0, 
+                               help='weight of second prediction')
+
     
 ######################### write CAFA formatted file for submission ####################################    
         
@@ -3022,7 +3037,7 @@ if __name__ == '__main__':
         run_evaluate(cp, args.infile, args.outfile, args.goaspect)
     
     if args.subcommand == 'combine':
-        run_combine(cp, args.infile1, args.infile2, args.outfile)
+        run_combine(cp, args.infile1, args.infile2, args.outfile, args.weight)
     
     if args.subcommand == 'tocafa':
         run_tocafa(cp, args.infile, args.outfile, args.model)
