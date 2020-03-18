@@ -3178,7 +3178,7 @@ if __name__ == '__main__':
         if args.method == 'roundrobin':
             run_combine_rr(cp, args.infile1, args.infile2, args.outfile)
         elif args.method == 'weighted_average':
-            run_combine_rr(cp, args.infile1, args.infile2, args.outfile, args.weight)
+            run_combine_weighted(cp, args.infile1, args.infile2, args.outfile, args.weight)
     
     if args.subcommand == 'tocafa':
         run_tocafa(cp, args.infile, args.outfile, args.model)
