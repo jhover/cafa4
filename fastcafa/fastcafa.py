@@ -615,8 +615,10 @@ def do_prior(config, infile, outfile, usecache=True, species=None, version='curr
 
   
 
-def run_combine(config, predict1, predict2, outpred, weight=1.0 ):
+def run_combine_weighted_avg(config, predict1, predict2, outpred, weight=1.0 ):
     """
+    Weighted average rank aggregration. 
+    
     Takes two predictions, creates combined prediction, weighting the goterm scores
     Where weight is not 1.0 (average between p1 and p2), the input weight is the second 
     with respect to the first, i.e. the first 'perturbed' by the second. 
@@ -698,7 +700,7 @@ def run_combine(config, predict1, predict2, outpred, weight=1.0 ):
         cdf.rank_y = cdf.rank_y + 1    
         logging.debug(f"cdf is:\n{cdf}")
         #cdf['rank'] = ( cdf.rank_x + cdf.rank_y / 2 )
-        # Perform weighted average of values:
+        # Take weighted mean of ranks:
         #
         #     ( 1 * rank_x) + ( weight * rank_y )
         #     -------------------------------
@@ -727,6 +729,136 @@ def run_combine(config, predict1, predict2, outpred, weight=1.0 ):
     topdf.to_csv(outpred)
     return topdf
 
+
+
+
+def run_combine_rr(config, predict1, predict2, outpred):
+    """
+    
+    Round-robin rank aggregation. 
+    
+    Takes two predictions, creates combined prediction, popping the top ranked prediction
+    off each input prediction to create the output.  
+
+    Must be done *per cid*. Missing cids from one or the other are passed through unchanged.  
+
+        ,cgid,    cid,        goterm,    score
+    0,AACC3_PSEAI,T2870000002,GO:0003674,182.0
+    1,AACC3_PSEAI,T2870000002,GO:0003824,182.0
+    2,AACC3_PSEAI,T2870000002,GO:0008080,182.0
+   
+    """
+    obj = get_ontology_object(config)
+    
+    pdf1 = pd.read_csv(predict1, index_col=0)
+    pdf2 = pd.read_csv(predict2, index_col=0)
+    
+    for idf in [pdf1, pdf2]:
+        logging.debug(f"df=\n{idf}")
+        
+    # sanity check
+    p1cids = set(pdf1.cid.unique())
+    logging.debug(f"input 1 has {len(p1cids)}")
+    p2cids = set(pdf1.cid.unique())
+    logging.debug(f"input 2 has {len(p2cids)}")
+        
+    # Dataframe to collect all calculated values. 
+    topdf = pd.DataFrame(columns=['cgid', 'cid', 'goterm','score'])
+
+    allcids = list(p1cids | p2cids)
+    allcids.sort()
+    logging.debug(f"got {len(allcids)} total cids, sorted, e.g. {allcids[0:3]} ")
+    
+
+    #logging.debug("Starting to handle each CID...")
+    for cid in allcids:     
+        #select
+        cdf1 = pdf1[pdf1.cid == cid]
+        cdf2 = pdf2[pdf2.cid == cid]
+        # copy
+        cdf1 = cdf1.copy()
+        cdf2 = cdf2.copy()
+        # reset index        
+        cdf1.reset_index(drop=True)
+        cdf2.reset_index(drop=True)  
+        
+        # sort       
+        cdf1.sort_values(by='score',inplace=True, ascending=False)
+        cdf2.sort_values(by='score',inplace=True, ascending=False)
+
+        # drop=True?
+        cdf1 = cdf1.reset_index(drop=True)
+        cdf2 = cdf2.reset_index(drop=True) 
+        
+        logging.debug(f"Before ranks: cdf1=\n{cdf1}\ncdf2=\n{cdf2} ")
+       
+        print(cdf1)
+        print(cdf2) 
+        
+        cdf = mergerankrr(cdf1, cdf2)
+       
+        topdf = topdf.append(cdf, ignore_index=True)
+
+    logging.debug(f"topdf after all=\n{topdf}")
+    topdf.to_csv(outpred)
+    return topdf
+
+
+def mergerankrr(df1, df2):
+    '''
+    performs round robin rank aggregation. 
+    
+           cgid              cid      goterm    score
+0     ODPB_MYCGE  G24327300000000  GO:0005575  64753.3
+1     ODPB_MYCGE  G24327300000000  GO:0110165  64317.1
+2     ODPB_MYCGE  G24327300000000  GO:0008150  61633.3
+
+           cgid              cid      goterm  score
+0    ODPB_MYCGE  G24327300000000  GO:0008150  535.2
+1    ODPB_MYCGE  G24327300000000  GO:0008152  535.2
+2    ODPB_MYCGE  G24327300000000  GO:0032787  356.8    
+
+    creates new df ordered by rank. 
+    
+    '''
+    logging.debug("In mergerankrr...")
+    
+    cgid = df1['cgid'].iloc[0]
+    cid = df1['cid'].iloc[0]
+    logging.debug(f"cgid={cgid}")
+    logging.debug(f"cid={cid}")
+    
+    
+    l1 = df1['goterm'].tolist()
+    l1.reverse()
+    l2 = df2['goterm'].tolist()
+    l2.reverse()
+    logging.debug(f"len l1: {len(l1)} len l2: {len(l2)}")
+    
+    newlist = list()
+    
+    while (len(l1) + len(l2)) > 0:
+        if len(l1)>0:
+            gt = l1.pop()
+            if gt not in newlist:
+                newlist.append(gt)
+            
+        if len(l2)>0:
+            gt = l2.pop()
+            if gt not in newlist:
+                newlist.append(gt)        
+    
+    logging.debug(f'newlist len: {len(newlist)} ')        
+    
+    cidf = pd.DataFrame(newlist, columns=['goterm'])
+    cidf['cgid'] = cgid
+    cidf['cid'] = cid
+    # when merging distinct predictions, scores are no longer comparable 
+    cidf['score'] = 1.0
+    
+    logging.debug(f"new cidf:\n{cidf}")    
+    return cidf
+    
 
 
 def run_evaluate(config, predictfile, outfile, goaspect=None):
@@ -2967,6 +3099,12 @@ if __name__ == '__main__':
                                default=1.0, 
                                help='weight of second prediction')
 
+    parser_combine.add_argument('-m', '--method',  
+                               metavar='method',
+                               dest='method',
+                               default='roundrobin', 
+                               type=str, 
+                               help='How predictions should be combined.')
     
 ######################### write CAFA formatted file for submission ####################################    
         
@@ -3037,7 +3175,10 @@ if __name__ == '__main__':
         run_evaluate(cp, args.infile, args.outfile, args.goaspect)
     
     if args.subcommand == 'combine':
-        run_combine(cp, args.infile1, args.infile2, args.outfile, args.weight)
+        if args.method == 'roundrobin':
+            run_combine_rr(cp, args.infile1, args.infile2, args.outfile)
+        elif args.method == 'weighted_average':
+            run_combine_rr(cp, args.infile1, args.infile2, args.outfile, args.weight)
     
     if args.subcommand == 'tocafa':
         run_tocafa(cp, args.infile, args.outfile, args.model)
