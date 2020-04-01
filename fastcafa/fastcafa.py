@@ -2010,7 +2010,7 @@ def calc_prior(config, usecache, species=None, version='current'):
     return freqarray
 
 
-def get_uniprot_byterm_df(config, usecache=True, exponly=False, version='current'):
+def get_uniprot_byterm_df(config, usecache=True, exponly=False, version='2019'):
     logging.debug(f"called with usecache={usecache} exponly={exponly} version={version}")
     lol = get_uniprot_byterm(config, usecache=usecache, version=version)
     df = pd.DataFrame(lol,columns=['pacc', 'pid', 'protein', 'species', 
@@ -2022,7 +2022,7 @@ def get_uniprot_byterm_df(config, usecache=True, exponly=False, version='current
     return df 
 
 
-def get_uniprot_byterm(config, usecache, version='current'):
+def get_uniprot_byterm(config, usecache, version='2019'):
     """
     [ {'proteinid': '001R_FRG3G', 
        'protein': '001R', 
@@ -2227,7 +2227,7 @@ def get_uniprot_df(config, usecache=True, exponly=False, version='current'):
     return df  
 
 
-def build_uniprot(config, usecache, version='current'):
+def build_uniprot(config, usecache, version='2019'):
     """
     Lowest-level uniprot build. calls parsing code .dat file. 
     Builds list of dictionaries, each element is item in uniprot/sprot
@@ -2334,7 +2334,7 @@ def write_tfa(outfile, text):
   
     
     
-def get_newannotated_df(config , limited=False ):
+def get_newannotated_df(config , limited=False, previous='2017', current='2019' ):
     """
     pulls out only entries newly annotated between 'previous' and 'current' versions
     of uniprot (as defined by config). 
@@ -2349,7 +2349,7 @@ def get_newannotated_df(config , limited=False ):
     exp_goev=[ 'EXP', 'IDA', 'IMP', 'IGI', 'IEP' ]
     
     # get previous uniprot any evidence type 
-    uprev = get_uniprot_byterm_df(config, usecache=True, exponly=False, version='previous')
+    uprev = get_uniprot_byterm_df(config, usecache=True, exponly=False, version=previous)
     uprevunannot = uprev[uprev.goterm.isna()]
     uprevunannotp = uprevunannot['pacc'].unique()
     logging.debug(f"{len(uprevunannotp)} unique un-annotated proteins.")
@@ -2385,7 +2385,7 @@ def get_newannotated_df(config , limited=False ):
         #dataframe.reset_index(drop=True, inplace=True) 
         
     # get current uniprot, experimental only.
-    unow = get_uniprot_byterm_df(config, usecache=True, exponly=True, version='current') 
+    unow = get_uniprot_byterm_df(config, usecache=True, exponly=True, version=current) 
     unow = unow[unow.goterm.notna()]
     logging.debug(f"current experimentally annotated:\n{unow}")
     
@@ -2484,7 +2484,7 @@ def get_specmap_object(config):
     return sm
 
 
-def parse_uniprot_dat(config, version='current'):
+def parse_uniprot_dat(config, version='2019'):
         """
         Parses uniprot/sprot DAT file, returns as list of dicts, with sub-dicts...
         [ {'proteinid': '4CLL9_ARATH', 

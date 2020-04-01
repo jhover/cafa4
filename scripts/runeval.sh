@@ -25,10 +25,10 @@ for TFA in `ls $TESTDIR/*.tfa`; do
 		PREDOUT=$OUTDIR/$FILEBASE.$METHOD.csv
 		EVALOUT=$OUTDIR/$FILEBASE.$METHOD.eval.csv
 		
-		echo "running $METHOD ..."
-		echo "time $PROG -C $DEBUG -c $CONF $METHOD -i $TFA -o $PREDOUT -V previous"
-		echo ""
-		time $PROG -C $DEBUG -c $CONF $METHOD -i $TFA -o $PREDOUT -V previous
+		#echo "running $METHOD ..."
+		#echo "time $PROG -C $DEBUG -c $CONF $METHOD -i $TFA -o $PREDOUT -V previous"
+		#echo ""
+		#time $PROG -C $DEBUG -c $CONF $METHOD -i $TFA -o $PREDOUT -V previous
 				
 		echo "Running evaluate..."
 		if [ -f $PREDOUT ]; then
