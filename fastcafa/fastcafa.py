@@ -17,7 +17,7 @@
 # species   all caps code                                              MOUSE   PONAB
 # goterms   (in dictionaries, not DFs)
 # goterm    Gene Ontology Annotation ID                                GO:0005634
-# goasp     biological process|molecular function|cellular component   bp       mf   cc
+# goasp     biological process|molecular function|cellular component   bp mf cc
 # goev      evidence code for GO annotation.                          IEA 
 # eval      BLAST/HMMER/PHMMER expect statistic                        1.000000e-126
 # bias      Adjustement to score for char prevalence                   3.5
@@ -75,6 +75,7 @@ UPASPECTMAP = { 'C': 'cc',
                 'F': 'mf',
                 'P': 'bp'
               }
+
 
 class Ontology(dict):
     """
@@ -361,7 +362,7 @@ def get_ontology_object(config, usecache=True):
     return Ontology.instance
 
 
-def get_uniprot_by(config, by='pid', usecache=True, version='current'):
+def get_uniprot_by(config, by='pid', usecache=True, version='2019'):
     """
     loads from cache, or triggers build...
     supports by pid (proteinid) or gene (gene name) or accession (pacc)
@@ -397,17 +398,17 @@ def get_uniprot_by(config, by='pid', usecache=True, version='current'):
 
 
 
-def build_uniprot_by(config, by='pacc', version='current'):
+def build_uniprot_by(config, by='pacc', version='2019'):
     """
 
     by = gene | pid | pacc
 
-        pacc species      goterm goev          pid   gene
-0     P0DJZ0   PAVHV  GO:0030430  IDA    11K_PAVHV    11K
-1     P32234   DROME  GO:0005525  IDA  128UP_DROME  128UP
-2     P83011   SCYCA  GO:0043231  IDA  13KDA_SCYCA    NaN
-7143  P24224   ECOLI  GO:0008897  IDA   ACPS_ECOLI   ACPS
-7144  P24224   ECOLI  GO:0018070  IDA   ACPS_ECOLI   ACPS    
+        pacc species      goterm  gasp goev          pid   gene
+0     P0DJZ0   PAVHV  GO:0030430  bp   IDA    11K_PAVHV    11K
+1     P32234   DROME  GO:0005525  mf   IDA  128UP_DROME  128UP
+2     P83011   SCYCA  GO:0043231  cc   IDA  13KDA_SCYCA    NaN
+7143  P24224   ECOLI  GO:0008897  mf   IDA   ACPS_ECOLI   ACPS
+7144  P24224   ECOLI  GO:0018070  mf   IDA   ACPS_ECOLI   ACPS    
 
 NOTES:  NaN expected for gene, omit...
         gene will not be unique. handle all...
@@ -419,7 +420,8 @@ NOTES:  NaN expected for gene, omit...
     """
     logging.debug(f"building uniprot by={by} and version={version}")
     ontobj = get_ontology_object(config, usecache=True)
-    ubtdf = get_uniprot_byterm_df(config, usecache=True, exponly=False, version=version)
+    ubtdf = get_uniprot_byterm_df(config, usecache=True, version=version)
+    ubtdf = filter_goevidence(config, ubtdf, exponly=True)
     ubtdf = ubtdf[ubtdf[by].notna()]
     ubtdf.sort_values(by=by, inplace=True)
     ubtdf.reset_index(drop=True, inplace=True)
@@ -469,12 +471,6 @@ NOTES:  NaN expected for gene, omit...
     return byxdict
 
 
-
-
-
-
-
-
 def do_build_prior(config, usecache=True ):    
 
     logging.info("calculating prior..")
@@ -484,29 +480,93 @@ def do_build_prior(config, usecache=True ):
     logging.info(f"priordf:\n{priordf}")    
 
 
-def do_expression(config, infile, outfile, usecache=True, version='current'):
+def do_orthoexpression(config, infile, outfile, usecache=True, version='2019', goasp=None):
     """
-       
+    Peform phmmer search for hits and pass output to method to perform 
+    expression lookup. 
+    
     """
-
     logging.info(f"Running phmmer on {infile}")
     pdf = get_phmmer_df(config, infile)
     logging.info(f"got phmmer df:\n{pdf}")
 
     if pdf is not None:
         logging.info(f"Making expression prediction against version '{version}'")
-        df = calc_expression_prediction(config, pdf, usecache, version)
+        df = calc_orthoexpression_prediction(config, pdf, usecache, version)
         logging.debug(f"prediction=\n{df}")#
-
+        if goasp is not None:
+            logging.debug(f"Adjusting prediction limit to {goasp}")
+            df = filter_goaspect(config, df, goasp)
         logging.info(f"writing to outfile {outfile}")
         df.to_csv(outfile)
         print(df)
     else:
         logging.info(f"No phmmer hits for infile {infile} so can't run expression.")    
 
-    
 
-def do_phmmer(config, infile, outfile, usecache=True, version='current'):
+def apply_pid2pacc(row, idmap):
+    a = np.nan
+    try:
+        a = idmap[row.cgid]
+    except KeyError:
+        logging.warning(f"KeyError in idmap: {row.cgid}") 
+    return a
+
+def apply_go2aspect(row, godict ):
+    """ 
+      'GO:0001654': {'is_a': ['GO:0007423'],
+      'part_of': ['GO:0150063'],
+      'goterm': 'GO:0001654',
+      'goname': 'eye development',
+      'goasp': 'bp'},
+    """
+    a = np.nan
+    try:
+        a = godict[row.goterm]['goasp']
+    except KeyError:
+        logging.warning(f"KeyError in godict: {row.goterm}") 
+    return a
+
+
+def do_expression(config, infile, outfile, usecache=True, version='2019',goasp=None ):
+    """
+    Infile can be FASTA with second ID field <gene>_<species>
+    E.g. YEFM_SALTY, CA194_HUMAN
+    
+    """
+    logging.info(f"Doing expression on file {infile}...")
+    idmaps = get_idmaps(config, usecache=usecache, version=version)
+    p2a= idmaps['pid2pacc']
+    
+    infile = os.path.expanduser(infile)
+    if os.path.exists(infile):
+        indf = parse_tfa_file(infile)
+        logging.debug(f"indf=\n{indf}")
+        # add column for accession no map: pacc 
+        indf['pacc'] = indf.apply(apply_pid2pacc, axis=1, idmap=p2a)
+        indf['score'] = 1.0
+        indf['pid'] = indf['cgid']
+        
+        #indf = get_df_from_pidlistfile()
+
+        df = calc_expression_prediction(config, indf, usecache, version)
+        logging.debug(f"prediction=\n{df}")
+        if len(df) > 0:
+            if goasp is not None:
+                logging.debug(f"Adjusting prediction limit to {goasp}")
+                df = filter_goaspect(config, df, goasp)
+                            
+            logging.info(f"writing to outfile {outfile}")
+            df.to_csv(outfile)
+        else:
+            logging.info("No content. Not writing outfile.")
+        logging.info("done.")
+    else:
+        logging.error(f"No such infile: {infile}")
+
+     
+
+def do_phmmer(config, infile, outfile, usecache=True, version='current', goasp=None):
     """
     Perform phmmer on infile sequences. 
     Output prediction to outfile.
@@ -514,7 +574,6 @@ def do_phmmer(config, infile, outfile, usecache=True, version='current'):
     Also cache predictions....
     
     """
-    
     logging.info(f"running phmmer version={version}")
     infile = os.path.expanduser(infile)
     pcachedir = os.path.expanduser(config.get('phmmer','cachedir')) 
@@ -531,18 +590,18 @@ def do_phmmer(config, infile, outfile, usecache=True, version='current'):
         else:      
             pdf = get_phmmer_df(config, infile, version)
             logging.info(f"got phmmer df:\n{pdf}")
-    
             if pdf is not None:
                 logging.info("making phmmer prediction...")
                 df = calc_phmmer_prediction(config, pdf, usecache, version)
                 logging.debug(f"prediction=\n{df}")
-               
+                if goasp is not None:
+                    logging.debug(f"Adjusting prediction limit to {goasp}")
+                    df = filter_goaspect(config, df, goasp)
             logging.info(f"Caching to {predcachefile}")
             df.to_csv(predcachefile)
         logging.info(f"writing to outfile {outfile}")
         df.to_csv(outfile)
         logging.info("done.")
-
     else:
         logging.error(f"No such infile: {infile}")
 
@@ -599,7 +658,7 @@ def parse_tfa_file_lol( infile):
 
 
 
-def do_prior(config, infile, outfile, usecache=True, species=None, version='current'):
+def do_prior(config, infile, outfile, usecache=True, species=None, version='current',goasp=None):
     """
     Apply prior likelihood (global or species) to all infile sequences. 
     Output prediction to outfile for later eval. 
@@ -608,6 +667,10 @@ def do_prior(config, infile, outfile, usecache=True, species=None, version='curr
     logging.info("making prior prediction...")
     df = make_prior_prediction(config, infile, species)
     logging.debug(f"prediction=\n{df}")
+    if goasp is not None:
+        logging.debug(f"Adjusting prediction limit to {goasp}")
+        df = filter_goaspect(config, df, goasp)
+        
     logging.info(f"writing to outfile {outfile}")
     df.to_csv(outfile)
     logging.info("done.")
@@ -945,6 +1008,7 @@ def do_evaluate(config, predictdf, goaspect):
         #logging.debug(f"cdf is:\n{cdf}")
         #logging.debug(f"appending: outdf.columns={outdf.columns} cdf.columns={cdf.columns}")
         cdf = calc_f1_max(cdf)
+        logging.debug(f"cid {cid}:\n{cdf}")
         outdf = outdf.append(cdf, ignore_index=True)
     
     outdf['correct'] = outdf['correct'].astype(np.bool)
@@ -968,7 +1032,9 @@ def calc_f1_max(dataframe):
     F1 max calculation by protein. 
     Dataframe assumes one cid represented. 
     Calculates f1max for set. 
-    Sets all rows 'f1max' to that value. 
+    Sets all rows 'f1max' to that value.
+    
+    nterms is total number of correct terms
     
     In:
              cgid             cid  correct      goterm nterms      pest     score  ntermsum
@@ -998,14 +1064,16 @@ def calc_f1_max(dataframe):
     for row in dataframe.itertuples():
         if row.correct == True:
             numtrue += 1
-        #logging.debug(f"numtrue is {numtrue}")
+            logstr = "correct"
+        else:
+            logstr = " not correct"
         try:
             pr = (numtrue / i)
             #logging.debug(f"pr[{i}] = {pr}")
             rc = (numtrue / nterms )
             #logging.debug(f"rc[{i}] = {rc}")
             f1 = 2 * ( (pr * rc) / (pr + rc ) )
-            #logging.debug(f"f1 is {f1}")
+            logging.debug(f"{row.cid}: {row.goterm} {logstr}. f1={f1}")
         except ZeroDivisionError:
             f1 = 0
             logging.warning("Division by zero error during f1 calculation.")
@@ -1102,9 +1170,13 @@ def get_evaluate_df(config, predictdf, goaspect=None,  threshold=None ):
 
 
 def run_phmmer(config, filename, version='current'):
+    logging.debug(f"running phmmer on {filename}")
     (outfile, exclude_list, cidcgidmap) = execute_phmmer(config, filename, version)
+    logging.debug(f"got outfile={outfile}")
     logging.debug(f"cidcgidmap is {cidcgidmap}")
+    logging.debug(f"running parse_phmmer on {outfile} exclude_list={exclude_list}")
     phdict = parse_phmmer(config, outfile, exclude_list, cidcgidmap )
+    logging.debug(f"got phdict...")
     return phdict
 
 def get_phmmer_dict(config, filepath, version='current'):
@@ -1131,7 +1203,7 @@ def get_phmmer_df(config, filepath, version='current'):
     try:
         df = pd.read_csv(pcachefile, index_col=0)
         logging.info("Cached phmmer run found. ")
-    except:
+    except FileNotFoundError:
         logging.info("No cached phmmer data. Running...")      
         phd = get_phmmer_dict(config, filepath, version)
         if len(phd) > 0:
@@ -1161,7 +1233,7 @@ def execute_phmmer(config, filename, version='current'):
     cidgidmap = get_tfa_geneids(filename)
     for c in cidgidmap.keys():
         exclude_list.append(c)     
-    outdir = os.path.expanduser(config.get('global','outdir'))
+    outdir = os.path.expanduser(config.get('phmmer','cachedir'))
     filename =os.path.expanduser(filename)
     outpath = os.path.dirname(filename)
     filebase = os.path.splitext(os.path.basename(filename))[0]
@@ -1169,11 +1241,8 @@ def execute_phmmer(config, filename, version='current'):
     logging.debug(f"outfile={outfile}")
     cpus = config.get('phmmer','cpus')
     eval_threshold = config.get('phmmer','eval_threshold')
-    if version == 'current':
-        database = os.path.expanduser(config.get('phmmer','database'))
-    else:
-        database = os.path.expanduser(config.get('phmmer', version))
-        logging.debug(f"Using non-current version of uniprot for phmmer database: {database}")
+    database = os.path.expanduser(config.get('phmmer', 'database'))
+    logging.debug(f"Using non-current version of uniprot for phmmer database: {database}")
     
     cmd = ["/usr/bin/which","phmmer"]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
@@ -1200,8 +1269,9 @@ def execute_phmmer(config, filename, version='current'):
     #                    capture_output=True)
     
     logging.debug(f"Ran cmd='{cmd}' outfile={outfile} returncode={cp.returncode} " )
-    logging.debug(f"stdout='{cp.stdout}")
-    logging.debug(f"stderr='{cp.stderr}")
+    #logging.debug(f"stdout='{cp.stdout}")
+    #logging.debug(f"stderr='{cp.stderr}")
+    logging.debug(f"returning outfile={outfile} exclude+list={exclude_list}")
     
     return (outfile, exclude_list, cidgidmap)
 
@@ -1266,26 +1336,29 @@ def parse_phmmer(config, filename, excludelist, cidcgidmap):
              'description'] , axis=1)
            
     topx = config.getint('phmmer','topx_threshold')
+    logging.debug(f"topx ={topx}")
     
     if topx is not None:
         df = df.groupby('cid').head(topx).reset_index(drop=True) 
     
     dict = df.to_dict(orient='index')
-    
+    logging.debug(f"dict is {dict}")
     idxtodel = []
-    for idx in dict.keys():
-         (db,pacc,pid) = dict[idx]['target'].split('|')
-         cid = dict[idx]['cid']
-         # only exclude hits for the exact target protein...
-         if pid == cidcgidmap[cid]:
-             logging.debug(f"Found the pid {pid} excluded to be excluded for this cid {cid}")
-             idxtodel.append(idx)
-         else:
-             (protein, species) = pid.split('_')
-             dict[idx]['pacc'] = pacc
-             dict[idx]['pid'] = pid
-             dict[idx]['cgid'] = cidcgidmap[dict[idx]['cid']]
-             del dict[idx]['target']
+    
+    for idx in dict.keys():      
+        (db,pacc,pid) = dict[idx]['target'].split('|')
+        logging.debug(f"split |-separated target field...") 
+        cid = dict[idx]['cid']
+        # only exclude hits for the exact target protein...
+        if pid == cidcgidmap[cid]:
+            logging.debug(f"Found the pid {pid} excluded to be excluded for this cid {cid}")
+            idxtodel.append(idx)
+        else:
+            (protein, species) = pid.split('_')
+            dict[idx]['pacc'] = pacc
+            dict[idx]['pid'] = pid
+            dict[idx]['cgid'] = cidcgidmap[dict[idx]['cid']]
+            del dict[idx]['target']
     for idx in idxtodel:
         del dict[idx]
     
@@ -1301,6 +1374,7 @@ def parse_phmmer(config, filename, excludelist, cidcgidmap):
     }
     
     """
+    logging.debug(f"returning OK. dict={dict}")
     return dict
 
 
@@ -1382,7 +1456,7 @@ def get_expression_genemap(config, species='YEAST'):
     
     
 
-def calc_expression_prediction(config, dataframe, usecache, version='current'):
+def calc_orthoexpression_prediction(config, dataframe, usecache, version='2019'):
     """
     Takes phmmer df PDF: 
                 cid           eval  pscore     bias   pacc          pid       cgid
@@ -1414,10 +1488,10 @@ def calc_expression_prediction(config, dataframe, usecache, version='current'):
     expdataobj = get_expressionset_object(config)
         
     gtlength = len(ontobj.gotermidx)
-    #max_goterms = config.getint('global','max_goterms')
-    topx_threshold = config.getint('expression', 'topx_threshold')
-    expscore_threshold = config.getfloat('expression','expscore_threshold')
-    score_method = config.get('expression' ,'score_method')
+    topx_threshold = config.getint('orthoexpression', 'topx_threshold')
+    expscore_threshold = config.getfloat('orthoexpression','expscore_threshold')
+    score_method = config.get('orthoexpression' ,'score_method')
+    max_goterms = config.getint('global','max_goterms')
 
     pdf = dataframe
     cidlist = list(pdf.cid.unique())
@@ -1505,13 +1579,12 @@ def calc_expression_prediction(config, dataframe, usecache, version='current'):
             
             logging.debug(f"dataframe is {df}")
             # This pulls out values, sorted by whatever 'score' is...
-            # df = df.nlargest(max_goterms, 'score')
+            df = df.nlargest(max_goterms, 'score')
             logging.debug(f"made dataframe for cid {cid}:\n{df}")
             topdf = topdf.append(df, ignore_index=True, sort=True)
         else:
             logging.info(f"No expression inference for {cid}. No predictions...")
 
-    
     logging.debug(f"made dataframe for all:\n{topdf}")
     return topdf
 
@@ -1543,10 +1616,10 @@ def calc_phmmer_prediction(config, dataframe, usecache, version='current'):
     """
     logging.debug(f"inbound dataframe:\n{dataframe}")
     logging.debug(f"getting uniprot_byterm_df, version {version}")
-    ubtdf = get_uniprot_byterm_df(config, usecache=usecache, exponly=False, version=version)
+    ubtdf = get_uniprot_byterm_df(config, usecache=usecache, version=version)
     ontobj = get_ontology_object(config, usecache)
     gtlength = len(ontobj.gotermidx)
-    # max_goterms = config.getint('global','max_goterms')
+    max_goterms = config.getint('global','max_goterms')
     score_method = config.get('phmmer','score_method')
 
     pdf = dataframe
@@ -1630,13 +1703,142 @@ def calc_phmmer_prediction(config, dataframe, usecache, version='current'):
         
         logging.debug(f"dataframe is:\n{df}")
         # This pulls out values, sorted by whatever 'score' is...
-        # df = df.nlargest(max_goterms, 'score')
+        df = df.nlargest(max_goterms, 'score')
         # df.sort_values(by='pest', ascending=False)
         logging.debug(f"made dataframe for cid {cid}:\n{df}")
         topdf = topdf.append(df, ignore_index=True, sort=True)
         
     logging.debug(f"made dataframe for all:\n{topdf}")
     return topdf
+
+
+def calc_expression_prediction(config, dataframe, usecache, version='2019'):
+    """
+    Takes generic df PDF: 
+             cid       cgid    pacc
+0  G982300000000   CD59_PIG  O62680
+1  G982300000001  APOA1_PIG  P18648
+2  G982300000002  ANKR1_PIG  Q865U8
+    
+    *NOTE* Assumes one and only one unique CGID per CID
+    
+    For each protein
+        parses species tag from pid:
+        loads gene expression dataset for that species code (if it exists)
+        gets ordered list of coexpressed UP paccs for ortholog.pacc
+        take top <topx_threshold> [100], filter by < <expscore_threshold> [.5 ]          
+        for each coexpressed pacc:
+            gets govector (if it exists)
+            sums govector (value 1 per goterm)   
+
+
+    Outputs prediction:
+   
+                   cid      goterm         score         cgid
+    0     G1009000000001  GO:0008150  <num-seen>     CHIA_MOUSE
+    1     G1009000000001  GO:0003674  <num-seen>    CHIA_MOUSE
+    2     G1009000000001  GO:0008152  <num-seen>    CHIA_MOUSE
+        
+    
+    """
+    logging.debug(f"getting uniprot_by pacc.. version={version}")
+    topx_threshold = config.getint('expression', 'topx_threshold')
+    expscore_threshold = config.getfloat('expression','expscore_threshold')
+    score_method = config.get('expression' ,'score_method')
+    max_goterms = config.getint('global','max_goterms')
+
+    upbpacc = get_uniprot_by(config, by='pacc', version=version)
+    ontobj = get_ontology_object(config, usecache)
+    gtlength = len(ontobj.gotermidx)
+    gtarray = np.array(list(ontobj.gotermidx)) 
+           
+    expdataobj = get_expressionset_object(config)
+    pdf = dataframe
+    cidlist = list(pdf.cid.unique())
+    logging.debug(f"cid list: {cidlist}")    
+
+    # Dataframe to collect all calculated values. 
+    topdf = pd.DataFrame(columns=['cid','goterm','score','cgid'])
+    
+    # Handle each cafa target in input list. In this case only one per row...
+    #         cid         cgid     pacc
+    # 0  G982300000000   CD59_PIG  O62680
+    # 1  G982300000001  APOA1_PIG  P18648
+    # 2  G982300000002  ANKR1_PIG  Q865U8
+    #
+    
+    logging.debug("Starting to handle each CID...")
+    for cid in cidlist:     
+        cdf = pdf[pdf.cid == cid]
+        cgid = cdf.reset_index().iloc[0].cgid       
+        pacc = cdf.reset_index().iloc[0].pacc
+        logging.debug(f"cgid for cid {cid} is {cgid}") 
+        (p, scode) = cgid.split('_')
+        logging.debug(f"got {p} and speciescode: {scode} ...")        
+        eds = expdataobj.get_dataset(scode)
+        
+        gvlist = []
+        gv = np.zeros(gtlength)
+          
+        if eds is not None:
+            logging.debug(f"Got dataset for species {scode}")   
+            try:
+                expser = eds[pacc]
+                logging.debug(f"expser type is {type(expser)}")
+                logging.debug(f"Got expression info for pacc={pacc}")
+                if (len(expser.shape) > 1 ) and ( expser.shape[1] > 1 ):
+                    logging.warning(f"Expression DF has too many columns!! sp={scode} col={row.pacc}" )
+                    expser = expser.iloc[:,0]
+                
+                expser = expser.nlargest(n=topx_threshold)
+                logging.debug(f"expression series: expser:\n{expser}")
+                #
+                #  2020-04-07 11:58:08,054 (UTC) [ DEBUG ] fastcafa.py:1756 root.calc_expression_prediction(): expression series: expser:
+                #  Q865U8        1.000000
+                #  I3LAY6        0.642747
+                #  A0A287A909    0.633572
+                #  A0A287A8C2    0.630955
+                #  A0A286ZT07    0.615943
+                logging.debug(f"Removing values less than {expscore_threshold}")
+                expser = expser[expser > expscore_threshold ]
+                
+                epacclist = list(expser.index)
+                # list of accession codes: ['A0A024R410', 'P49411', ...]
+                for epacc in epacclist:
+                    try:                        
+                        newgv = upbpacc[epacc].astype(int)
+                        logging.debug(f"newgv is {newgv}")
+                        gv = gv + newgv
+                        logging.debug(f"Added GO vector for {epacc}")
+                    
+                    except KeyError:
+                        logging.debug(f"No GO vector for {epacc}")
+
+                logging.debug(f"{cid}: gv.sum={gv.sum()} gv.max={gv.max()}")
+                
+                gvnz = gv > 0
+                gotermar = gtarray[gvnz]
+                govalar = gv[gvnz]
+                cidar = np.full( len(govalar), fill_value=cid)        
+                cgidar = np.full(len(govalar), fill_value=cgid)
+                df = pd.DataFrame({ 'cid': cidar, 
+                                    'goterm': gotermar, 
+                                    'score' : govalar, 
+                                    'cgid' : cgidar })
+                logging.debug(f"dataframe is {df}")
+                df = df.nlargest(max_goterms, 'score')
+                df = df.sort_values(by='score', ascending=False)
+                topdf = topdf.append(df, ignore_index=True, sort=True)
+                
+            except KeyError:
+                logging.debug(f"No expression info for pacc={pacc}")
+        
+        else:
+            logging.debug(f"No expression data for species {scode}")
+            
+    logging.debug(f"made dataframe for all:\n{topdf}")
+    return topdf
+
 
 
 def check_filename_for_taxids(config, filename):
@@ -1969,13 +2171,13 @@ def calc_prior(config, usecache, species=None, version='current'):
         logging.debug(f"building sprot. species={species}")
         sprot = get_uniprot_byterm(config, usecache=True, version=version)
         sdf = pd.DataFrame(sprot,columns=['pacc', 'pid', 'protein', 'species',
-                                          'goterm', 'goev', 'seqlen', 'seq', 'gene'                                        
+                                          'goterm','goasp','goev', 'seqlen', 'seq', 'gene'                                        
                                           ])
         logging.debug(f"Built dataframe:\n{sdf}")    
         
         # evaluation is done only on experimentally validated annotations. 
         # so calculate prior solely using experimentally validated annotations. 
-        sdf = filter_goev_exp(sdf)
+        sdf = filter_goevidence(config, sdf)
         sprot = sdf.values.tolist()
         
         if species is not None: 
@@ -2010,14 +2212,11 @@ def calc_prior(config, usecache, species=None, version='current'):
     return freqarray
 
 
-def get_uniprot_byterm_df(config, usecache=True, exponly=False, version='2019'):
-    logging.debug(f"called with usecache={usecache} exponly={exponly} version={version}")
+def get_uniprot_byterm_df(config, usecache=True, version='2019'):
+    logging.debug(f"called with usecache={usecache} version={version}")
     lol = get_uniprot_byterm(config, usecache=usecache, version=version)
     df = pd.DataFrame(lol,columns=['pacc', 'pid', 'protein', 'species', 
-                                      'goterm','goev','seqlen','seq','gene'])
-    if exponly:
-        logging.debug("Removing non-experimental annotations... ")
-        df = filter_goev_exp(df)    
+                                      'goterm','goasp','goev','seqlen','seq','gene'])  
     logging.debug(f"Built dataframe:\n{df}")
     return df 
 
@@ -2029,7 +2228,7 @@ def get_uniprot_byterm(config, usecache, version='2019'):
        'species': 'FRG3G', 
        'proteinacc': 'Q6GZX4', 
        'taxonid': '654924', 
-       'goterms': {'GO:0046782': 'IEA'}, 
+       'goterms': {'GO:0046782': ['cc','IEA'}, 
        'seqlength': 256, 
        'sequence': 'MAFSAEDVL......LYDDSFRKIYTDLGWKFTPL'},
        'gene' : '128UP',
@@ -2039,12 +2238,11 @@ def get_uniprot_byterm(config, usecache, version='2019'):
     ]
     
     Generate non-redundant uniprot with a row for every goterm:
-        pacc species      goterm goev          pid   gene
-0     P0DJZ0   PAVHV  GO:0030430  IDA    11K_PAVHV    11K
-1     P32234   DROME  GO:0005525  IDA  128UP_DROME  128UP
-2     P83011   SCYCA  GO:0043231  IDA  13KDA_SCYCA     {} 
+        pacc species      goterm goasp goev          pid   gene
+0     P0DJZ0   PAVHV  GO:0030430  bp    IDA    11K_PAVHV    11K
+1     P32234   DROME  GO:0005525  mf    IDA  128UP_DROME  128UP
+2     P83011   SCYCA  GO:0043231  cc    IDA  13KDA_SCYCA     {} 
    
-    
        for p in lod:
             newgts = {}
             for gt in p['goterms'].keys():
@@ -2072,13 +2270,15 @@ def get_uniprot_byterm(config, usecache, version='2019'):
         # and proceed...
         if len(p['goterms'].keys()) > 0:           
             for gt in p['goterms'].keys():
-                evcode = p['goterms'][gt]
+                evcode = p['goterms'][gt][1]
+                aspcode = p['goterms'][gt][0]
                 
                 item = [ p['proteinacc'],
                          p['proteinid'],
                          p['protein'],
                          p['species'],
                          gt,
+                         aspcode,
                          evcode, 
                          p['seqlength'],
                          p['sequence'], 
@@ -2090,6 +2290,7 @@ def get_uniprot_byterm(config, usecache, version='2019'):
                          p['proteinid'],
                          p['protein'],
                          p['species'],
+                         np.nan,
                          np.nan,
                          np.nan, 
                          p['seqlength'],
@@ -2216,13 +2417,10 @@ def build_prior(config, usecache, species=None, outfile=None, version='current')
     return out
 
 
-def get_uniprot_df(config, usecache=True, exponly=False, version='current'):
+def get_uniprot_df(config, usecache=True, version='2019'):
     logging.debug(f"called with usecache={usecache}")
     lod = build_uniprot(config, usecache, version)
-    df = pd.DataFrame(lod)
-    if exponly:
-        logging.debug("Removing non-experimental annotations... ")
-        df = filter_goev_exp(df)    
+    df = pd.DataFrame(lod)  
     logging.debug(f"Built dataframe:\n{df}")    
     return df  
 
@@ -2235,6 +2433,7 @@ def build_uniprot(config, usecache, version='2019'):
     """
     logging.debug(f"getting uniprot usecache={usecache} version={version}")
     cachedir = os.path.expanduser(config.get('uniprot','cachedir'))    
+    evcode_flags = config.getboolean('uniprot','evcode_flags')
     cachefile = f"{cachedir}/uniprot.{version}.pickle"    
     listofdicts = None
     if os.path.exists(cachefile) and usecache:
@@ -2249,6 +2448,12 @@ def build_uniprot(config, usecache, version='2019'):
             cf.close()       
     else:
         listofdicts = parse_uniprot_dat(config, version )
+        logging.debug(f"evcode_flags is {evcode_flags}")
+        if evcode_flags:
+            logging.debug(f"adding boolean evidence code flags to each dict entry.")
+            listofdicts = add_evidence_flags(config, listofdicts)
+            logging.debug(f"got adjusted list of dicts...")
+        
         logging.debug(f"saving listofdicts: to {cachefile}")
         try:
             cf = open(cachefile, 'wb')    
@@ -2261,11 +2466,60 @@ def build_uniprot(config, usecache, version='2019'):
             cf.close()        
     return listofdicts
 
+def add_evidence_flags(config, lod):
+    """
+    Adds boolean flag entries for evidence code categories:
+    exp_codes = EXP, IDA, IMP, IGI, IEP, IPI 
+    ele_codes = IEA
+    cur_codes = ISS, NAS, TAS, IC, IRD, IGC, IBD, IBA, ISO, ISA, ISM, RCA, IKR
+    
+    is_exp   has experimental annotation
+    is_ele   has IEA/electronic annotation
+    is_cur   has curated non-experimental annotation
+    is_ann   has any annotation. 
+    
+    'goterms': {'GO:0000334': 'IDA',
+               'GO:0055114': 'IEA',
+               'GO:0019363': 'IEA'},
 
-def do_testset(config, numseq=10, species=None, outfile=None, limited=False):
+    """
+    logging.debug("adding evidence code boolean flags to uniprot data...")
+    exp_codes = [ x.strip() for x in config.get('uniprot','exp_codes').split(',')]  
+    ele_codes = [ x.strip() for x in config.get('uniprot','ele_codes').split(',')]
+    cur_codes = [ x.strip() for x in config.get('uniprot','cur_codes').split(',')]
+    
+    for d in lod:
+        #logging.debug(f"dict: {d}")
+        try:
+            gts = d['goterms']
+            if len(gts) > 0:
+                d['is_ann'] = True
+                d['is_exp'] = False
+                d['is_ele'] = False
+                d['is_cur'] = False
+                for gt in gts.keys():
+                    ec = gts[gt][1]
+                    if ec in exp_codes:
+                        d['is_exp'] = True
+                    elif ec in ele_codes:
+                        d['is_ele'] = True
+                    elif ec in cur_codes:
+                        d['is_cur'] = True
+                    else:
+                        logging.warning(f"annotated protein but ecode='{ec}' not account for")
+            else:
+                d['is_ann'] = False                    
+        except KeyError:
+            d['is_ann'] = False
+
+    return lod
+
+
+
+def do_testset(config, numseq=10, species=None, outfile=None, limited=False, previous='2017',current='2019'):
     logging.debug(f"numseq={numseq} species={species} outfile={outfile} limited={limited}")
     logging.debug("Determining newly annotated proteins...")
-    newannot = get_newannotated_df(config, limited)
+    newannot = get_newannotated_df(config, limited, previous, current)
     newannot.drop_duplicates(['pacc'], inplace=True, keep='first')
     newannot.reset_index(drop=True, inplace=True)
     logging.debug(f"got {len(newannot)} unique newly-annotated entries with limited={limited}")
@@ -2453,8 +2707,66 @@ def build_specmaps(config, usecache):
             traceback.print_exc(file=sys.stdout)     
         finally:
             cf.close()    
-    logging.info(f"saving map: to {cachefile}")
+    logging.debug(f"saving map: to {cachefile}")
     return map
+
+
+def build_idmaps(config, version='2019'):
+    """
+    Builds O(1) lookup maps of identifiers:
+    
+    pacc   pid
+    idmaps = { 
+               'pid2pacc' : { },  
+               'pacc2pid' : {}}
+            }
+
+    """
+    lod = build_uniprot(config, usecache=True, version=version )   
+    idmaps ={}
+    pid2pacc = {}
+    pacc2pid = {}
+    
+    for item in lod:
+        pid2pacc[item['proteinid']] = item['proteinacc']
+        pacc2pid[item['proteinacc']] = item['proteinid']
+
+    idmaps['pid2pacc'] = pid2pacc    
+    idmaps['pacc2pid'] = pacc2pid
+    
+    return idmaps
+
+def get_idmaps(config, usecache=True, version='2019'):
+    
+    
+    cachedir = os.path.expanduser(config.get('uniprot','cachedir'))
+    cachefile = f"{cachedir}/idmaps.{version}.pickle"
+
+    if os.path.exists(cachefile) and usecache:
+        logging.debug("Cache hit. Using existing info...")    
+        try:
+            cf = open(cachefile, 'rb')    
+            idmaps = pickle.load(cf)
+        except Exception:
+            logging.error(f'unable to load via pickle from {cachefile}')
+            traceback.print_exc(file=sys.stdout)    
+        finally:
+            cf.close()       
+    else:
+        idmaps = build_idmaps(config, version)
+        logging.debug(f"saving dict: to {cachefile}")
+        try:
+            cf = open(cachefile, 'wb')    
+            pickle.dump(idmaps, cf )
+            logging.debug(f"saved dict: to {cachefile}")
+        except Exception as e:
+            logging.error(f'unable to dump via pickle to {cachefile}')
+            traceback.print_exc(file=sys.stdout)     
+        finally:
+            cf.close()        
+    return idmaps
+    
+    
 
 def get_cafaspecies(config):
     """
@@ -2567,7 +2879,7 @@ def parse_uniprot_dat(config, version='2019'):
                     goevsrc = fields[3]
                     (goevidence, evsrc) = goevsrc.split(':') 
                     goevidence = goevidence.strip()
-                    current['goterms'][goterm] = goevidence
+                    current['goterms'][goterm] = [ goaspect,  goevidence ]
 
                 elif line.startswith("SQ   SEQUENCE"):
                     #logging.debug("Handling SQ:  XXX")
@@ -2820,6 +3132,63 @@ def run_tocafa(config, infile, outfile=None, modelnum=1):
     logging.info(f"Wrote cafafile with {len(topdf.index)} entries. ")
     return s
 
+def run_summarize(config, infiles, outfile):
+    logging.debug(f'handling infiles= {infiles}')
+
+
+    for infile in infiles:
+        basename = os.path.basename(infile)
+        logging.debug(f"{infile}")
+        try:
+            df = pd.read_csv(infile, index_col=0, comment="#")            
+            df.drop(['f1maxtotal','pr','score'], inplace=True, axis=1)
+            means = df.drop(['correct'], axis=1)
+            meansdf = means.groupby('cid').mean()
+            sums = df.drop(['nterms','f1max','goterm'], axis=1)
+            sumsdf =  sums.groupby('cid').sum()
+            outdf = pd.merge(meansdf, sumsdf , how='outer', on=['cid'] )
+            
+            # need to keep and split cgid into protein and species. 
+            # so we can scatterplot by species. 
+            #
+
+        except FileNotFoundError:
+            print(f"no such file {infile}")
+    
+    ar = np.array(f1maxes)
+    meanf1max = np.mean(ar)
+    
+    print(f">meanf1max(allfiles):\t\t{meanf1max}")
+
+
+def run_summarize_simple(config, infiles, outfile):
+    logging.info(f'handling infiles= {infiles}')
+    f1maxes = []
+    for infile in infiles:
+        basename = os.path.basename(infile)
+        # print(f"{infile}")
+        try:
+            df = pd.read_csv(infile, index_col=0, comment="#")
+            totaltrue = len(df[df.correct == True])
+            totalnum = df.shape[0]
+            if totalnum != 0: 
+                accuracy = totaltrue / totalnum
+                numcids = len(df.cid.unique() )
+                f1max = df.groupby('cid')['f1max'].max().mean()  
+                f1maxes.append(f1max)
+                    
+                print(f"num cafaids: {numcids}")
+                print(f"{basename}\tf1max: {f1max}")
+                print(f"accuracy: {accuracy}")
+            else:
+                print(f"{basename}\tf1max: NA")
+        except FileNotFoundError:
+            print(f"no such file {infile}")
+    
+    ar = np.array(f1maxes)
+    meanf1max = np.mean(ar)
+    
+    print(f">meanf1max(allfiles):\t\t{meanf1max}")    
     
     
 
@@ -2839,18 +3208,45 @@ def matrix_debug(matrix):
     """
     return f"type: {type(matrix)} shape: {matrix.shape} dtype: {matrix.dtype} sum: {matrix.sum()} min: {matrix.min()} max {matrix.max()}\n{matrix}"
 
+def filter_goaspect(config, dataframe, goasp):
+    """
+    Adds goasp column. 
+    Removes goterms from incorrect aspect. Re-indexes. 
 
-def filter_goev_exp(dataframe):
+            cgid             cid      goterm     score  
+0      CP270_RAT  G1011600000000  GO:0008150  252622.3
+1      CP270_RAT  G1011600000000  GO:0005575  215323.7
+2      CP270_RAT  G1011600000000  GO:0110165  210381.7    
+       
     """
-    Remove any rows of a dataframe that do *not* represent experimentally confirmed evidence.
-    Leave un-annotated (NaN) and experimental goev codes.  
+    logging.debug(f"filtering to goaspect {goasp}")
+    (godict, altids) = parse_obo(config)   
+    dataframe['goasp'] = dataframe.apply(apply_go2aspect, axis=1, godict=godict)
+    dataframe = dataframe[dataframe.goasp == goasp]
+    dropcol = ['goasp' ] 
+    dataframe.drop(columns=dropcol, inplace=True)
+    dataframe.reset_index(drop=True, inplace=True)
+    return dataframe
+
+
+def filter_goevidence(config, dataframe, exponly=True  ):
+    """
+    Remove any rows of a dataframe that do *not* represent experimentally confirmed 
+    evidence.
+    XXX  Leave un-annotated (NaN) and experimental goev codes.  
     
-    non-exp  IEA, ISS, ISO, ISA, ISM, IGC, RCA, IBA, IBD, IKR, IRD
+    exp_codes = EXP, IDA, IMP, IGI, IEP, IPI, HTP, HDA, HMP, HGI, HEP 
+    ele_codes = IEA
+    cur_codes = ISS, NAS, TAS, IC, IRD, IGC, IBD, IBA, ISO, ISA, ISM, RCA, IKR
     
     """
-    nonexp_goev = ['IEA', 'ISS', 'ISO', 'ISA', 'ISM', 'IGC', 'RCA', 'IBA', 'IBD', 'IKR', 'IRD']
+    exp_codes = [ x.strip() for x in config.get('uniprot','exp_codes').split(',')]  
+    ele_codes = [ x.strip() for x in config.get('uniprot','ele_codes').split(',')]
+    cur_codes = [ x.strip() for x in config.get('uniprot','cur_codes').split(',')]
+    
+    dataframe = dataframe[dataframe['goev'].isin(exp_codes)]
     #exp_goev=[ 'EXP', 'IDA', 'IMP', 'IGI', 'IEP' ]
-    dataframe = dataframe[~dataframe['goev'].isin(nonexp_goev)] 
+    #dataframe = dataframe[~dataframe['goev'].isin(nonexp_goev)] 
     dataframe.reset_index(drop=True, inplace=True)
     return dataframe
 
@@ -2884,13 +3280,6 @@ if __name__ == '__main__':
                         default='default',
                         help='Run-specific identifier to use in file output.')
 
-
-    parser.add_argument('-a', '--aspect',
-                        action="store", 
-                        dest='goaspect', 
-                        default=None,
-                        help='Generate/score only for specific GO aspect. [bp|cc|mf] ')
-
     parser.add_argument('-C', '--usecache',
                         action='store_true', 
                         dest='nocache',
@@ -2901,28 +3290,7 @@ if __name__ == '__main__':
     subparsers = parser.add_subparsers( dest='subcommand',
                                         help='sub-command help.')
 
-################################ run phmmer ########################################
-   
-    parser_phmmer = subparsers.add_parser('phmmer',
-                                          help='run phmmer and output prediction')
-    
-    parser_phmmer.add_argument('-i','--infile', 
-                               metavar='infile', 
-                               type=str, 
-                               help='a .fasta sequence files')
-
-    parser_phmmer.add_argument('-o','--outfile', 
-                               metavar='outfile', 
-                               type=str, 
-                               help='a DF .csv prediction file')
-
-    parser_phmmer.add_argument('-V','--version', 
-                               metavar='version', 
-                               type=str, 
-                               default='current',
-                               help='a DF .csv prediction file')
-
-################################ run prior ########################################
+################################ prior prediction ########################################
 
     parser_prior = subparsers.add_parser('prior',
                                           help='output prior as prediction for input TFAs')
@@ -2948,9 +3316,44 @@ if __name__ == '__main__':
                                type=str, 
                                default='current',
                                help='uniprot version to use')
+    
+    parser_prior.add_argument('-g','--goaspect', 
+                               metavar='goasp', 
+                               type=str, 
+                               default=None,
+                               help='Limit prediction to goaspect [bp|mf|cc]' )
 
 
-################################ phmmer -> expression ########################################
+################################ phmmer prediction ########################################
+   
+    parser_phmmer = subparsers.add_parser('phmmer',
+                                          help='run phmmer and output prediction')
+    
+    parser_phmmer.add_argument('-i','--infile', 
+                               metavar='infile', 
+                               type=str, 
+                               help='a .fasta sequence files')
+
+    parser_phmmer.add_argument('-o','--outfile', 
+                               metavar='outfile', 
+                               type=str, 
+                               help='a DF .csv prediction file')
+
+    parser_phmmer.add_argument('-V','--version', 
+                               metavar='version', 
+                               type=str, 
+                               default='current',
+                               help='a DF .csv prediction file')
+
+    parser_phmmer.add_argument('-g','--goaspect', 
+                               metavar='goasp', 
+                               type=str, 
+                               default=None,
+                               help='Limit prediction to goaspect [bp|mf|cc]' )
+
+
+
+################################ direct expression ########################################
    
     parser_expr = subparsers.add_parser('expression',
                                           help='infer via expression and output prediction')
@@ -2971,6 +3374,39 @@ if __name__ == '__main__':
                                default='current',
                                help='version of uniprot to use.')
 
+    parser_expr.add_argument('-g','--goaspect', 
+                               metavar='goasp', 
+                               type=str, 
+                               default=None,
+                               help='Limit prediction to goaspect [bp|mf|cc]' )
+
+
+################################ orthoexpression ########################################
+   
+    parser_oexpr = subparsers.add_parser('orthoexpression',
+                                          help='infer via expression and output prediction')
+    
+    parser_oexpr.add_argument('-i','--infile', 
+                               metavar='infile', 
+                               type=str, 
+                               help='a .fasta sequence files')
+
+    parser_oexpr.add_argument('-o','--outfile', 
+                               metavar='outfile', 
+                               type=str, 
+                               help='a DF .csv prediction file')
+
+    parser_oexpr.add_argument('-V','--version', 
+                               metavar='version', 
+                               type=str, 
+                               default='current',
+                               help='version of uniprot to use.')
+
+    parser_oexpr.add_argument('-g','--goaspect', 
+                               metavar='goasp', 
+                               type=str, 
+                               default=None,
+                               help='Limit prediction to goaspect [bp|mf|cc]' )
 
 
 ######################### build and cache ontology ####################################
@@ -2980,6 +3416,12 @@ if __name__ == '__main__':
 
     parser_builduniprot = subparsers.add_parser('build_uniprot',
                                           help='build and cache uniprot info')
+
+    parser_builduniprot.add_argument('-V','--version', 
+                               metavar='version', 
+                               type=str, 
+                               default='2019',
+                               help='version of uniprot to use.')
 
 
 ######################### build and cache prior info ####################################
@@ -3002,7 +3444,7 @@ if __name__ == '__main__':
     parser_buildprior.add_argument('-V','--version', 
                                metavar='version', 
                                type=str, 
-                               default='current',
+                               default='2019',
                                help='version of uniprot to use.')
 
 ######################### build and cache species maps ####################################
@@ -3062,13 +3504,27 @@ if __name__ == '__main__':
                                required=False,
                                default=None, 
                                type=str, 
-                               help='a DF .csv prediction file')
+                               help='a Fasta testfile. ')
     
     parser_testset.add_argument('-L', '--limited',
                         action='store_true', 
                         dest='limited',
                         default=False, 
                         help='Allow test targets that were electronically annotated.')
+
+    parser_testset.add_argument('-O', '--previous',
+                        metavar='previous', 
+                        dest='previous',
+                        default='2017',
+                        type=str, 
+                        help='Older Swissprot version to use as previous.')
+
+    parser_testset.add_argument('-N', '--current',
+                        metavar='current', 
+                        dest='current',
+                        default='2019', 
+                        type=str,
+                        help='Newer Swissprot version to use as current.')
 
 ################################ combine predictions ########################################
    
@@ -3102,7 +3558,7 @@ if __name__ == '__main__':
     parser_combine.add_argument('-m', '--method',  
                                metavar='method',
                                dest='method',
-                               default='roundrobin', 
+                               default='rank_average', 
                                type=str, 
                                help='How predictions should be combined.')
     
@@ -3127,7 +3583,25 @@ if __name__ == '__main__':
                                default='1', 
                                help='Numeric label for this method/model.')
 
+######################### summarize  ####################################    
+        
+    parser_summarize = subparsers.add_parser('summarize',
+                                          help='create summary statistics from eval files.  ')
     
+    parser_summarize.add_argument('infiles', 
+                               metavar='infiles', 
+                               type=str,
+                               nargs='+', 
+                               help='.csv prediction file[s]')        
+          
+    parser_summarize.add_argument('-o', '--outfile', 
+                               metavar='outfile', 
+                               type=str, 
+                               default=None,
+                               help='a .csv output file for submission.') 
+
+
+##############################################################################
 
     args= parser.parse_args()
     
@@ -3143,21 +3617,14 @@ if __name__ == '__main__':
     cp.read(args.conffile)
     
     logging.debug(f"args: {args}")
-    
-    if args.subcommand == 'phmmer':
-        do_phmmer(cp, args.infile, args.outfile, usecache=True, version=args.version )
-    
-    if args.subcommand == 'expression':
-        do_expression(cp, args.infile, args.outfile, usecache=True, version=args.version )
-    
-    if args.subcommand == 'prior':
-        do_prior(cp, args.infile, args.outfile, usecache=True, version=args.version)
-       
+
+    ################## create data resources #######################
+
     if args.subcommand == 'build_ontology':
         build_ontology(cp, usecache=False)
 
     if args.subcommand == 'build_uniprot':
-        build_uniprot(cp, usecache=False)
+        build_uniprot(cp, usecache=False, version=args.version)
 
     if args.subcommand == 'build_species':
         build_specmaps(cp,  usecache=False)
@@ -3168,20 +3635,58 @@ if __name__ == '__main__':
     if args.subcommand == 'build_uniprot_test':
         build_uniprot_test(cp, usecache=False )
 
+    ################## generate prediction file #######################
+    
+    if args.subcommand == 'prior':
+        do_prior(cp, args.infile, 
+                 args.outfile, 
+                 usecache=True, 
+                 version=args.version, 
+                 goasp=args.goasp )
+       
+    if args.subcommand == 'phmmer':
+        do_phmmer(cp, args.infile, 
+                  args.outfile, 
+                  usecache=True, 
+                  version=args.version,
+                  goasp=args.goasp )
+    
+    if args.subcommand == 'orthoexpression':
+        do_orthoexpression(cp, args.infile, 
+                           args.outfile, 
+                           usecache=True, 
+                           version=args.version,
+                           goasp=args.goasp )
+
+    if args.subcommand == 'expression':
+        do_expression(cp, args.infile, 
+                      args.outfile, 
+                      usecache=True, 
+                      version=args.version,
+                      goasp=args.goasp )
+
+    if args.subcommand == 'combine':
+        if args.method == 'round_robin':
+            run_combine_rr(cp, args.infile1, args.infile2, args.outfile)
+        elif args.method == 'rank_average':
+            run_combine_weighted(cp, args.infile1, args.infile2, args.outfile, args.weight)
+
+    ################## test performance  #######################
+
     if args.subcommand == 'testset':
-        do_testset(cp, args.numseq, args.species, args.outfile, args.limited )
+        do_testset(cp, args.numseq, args.species, args.outfile, args.limited, args.previous, args.current )
 
     if args.subcommand == 'evaluate':
         run_evaluate(cp, args.infile, args.outfile, args.goaspect)
-    
-    if args.subcommand == 'combine':
-        if args.method == 'roundrobin':
-            run_combine_rr(cp, args.infile1, args.infile2, args.outfile)
-        elif args.method == 'weighted_average':
-            run_combine_weighted(cp, args.infile1, args.infile2, args.outfile, args.weight)
+
+    if args.subcommand == 'summarize':
+        run_summarize(cp, args.infiles, args.outfile)
+
+    ################## generate submission file  #######################
     
     if args.subcommand == 'tocafa':
         run_tocafa(cp, args.infile, args.outfile, args.model)
         
+
 
     

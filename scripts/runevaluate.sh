@@ -1,7 +1,6 @@
 #!/bin/bash
 PROG=~/git/cafa4/fastcafa/fastcafa.py
 CONF=~/git/cafa4/etc/fastcafa.conf
-METHODS="prior phmmer expression"
 DEBUG="-d "
 
 FILES=$@

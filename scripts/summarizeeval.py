@@ -23,17 +23,19 @@ for infile in infiles:
     # print(f"{infile}")
     try:
         df = pd.read_csv(infile, index_col=0, comment="#")
-        
         totaltrue = len(df[df.correct == True])
-        totalnum = df.shape[0] 
-        accuracy = totaltrue / totalnum
-        numcids = len(df.cid.unique() )
-        f1max = df.groupby('cid')['f1max'].max().mean()  
-        f1maxes.append(f1max)
+        totalnum = df.shape[0]
+        if totalnum != 0: 
+            accuracy = totaltrue / totalnum
+            numcids = len(df.cid.unique() )
+            f1max = df.groupby('cid')['f1max'].max().mean()  
+            f1maxes.append(f1max)
                 
-        #print(f"num cafaids: {numcids}")
-        print(f"{basename}\tf1max: {f1max}")
-        #print(f"accuracy: {accuracy}")
+            #print(f"num cafaids: {numcids}")
+            print(f"{basename}\tf1max: {f1max}")
+            #print(f"accuracy: {accuracy}")
+        else:
+            print(f"{basename}\tf1max: NA")
     except FileNotFoundError:
         print(f"no such file {infile}")
 

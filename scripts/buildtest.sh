@@ -5,16 +5,22 @@ SPECLIST="HUMAN MOUSE RAT BOVIN PIG DANRE DROME CAEEL ARATH MAIZE YEAST SCHPO EC
 #SPECLIST="ARATH CAEEL DANRE DROME HUMAN RAT YEAST"
 PROG=~/git/cafa4/fastcafa/fastcafa.py
 CONF=~/git/cafa4/etc/fastcafa.conf
-NUMSEQ=2
+NUMSEQ=100
+OLD=2010
+NEW=2019
+OUTDIR=~/data/cafa4/testtargets/$OLD-$NEW
 
+mkdir -p $OUTDIR
 
 for SPECIES in $SPECLIST; do 
-	TFAOUT=~/play/cafa4/sp_species.$SPECIES.test.$NUMSEQ.tfa
-
-	echo "time $PROG -c $CONF testset -n $NUMSEQ -s $SPECIES -o $TFAOUT"  
-	time $PROG -c $CONF testset -n $NUMSEQ -s $SPECIES -o $TFAOUT
-
-
+	TFAOUT=$OUTDIR/sp_species.$SPECIES.test.noknow.$NUMSEQ.tfa
+	echo "time $PROG -c $CONF testset -n $NUMSEQ -s $SPECIES -o $TFAOUT -O $OLD -N $NEW  "  
+	time $PROG -c $CONF testset -n $NUMSEQ -s $SPECIES -o $TFAOUT -O $OLD -N $NEW 
 done
 
+for SPECIES in $SPECLIST; do 
+	TFAOUT=$OUTDIR/sp_species.$SPECIES.test.limited.$NUMSEQ.tfa
+	echo "time $PROG -c $CONF testset -n $NUMSEQ -s $SPECIES -L -o $TFAOUT -O $OLD -N $NEW  "  
+	time $PROG -c $CONF testset -n $NUMSEQ -s $SPECIES -L -o $TFAOUT -O $OLD -N $NEW 
+done
 

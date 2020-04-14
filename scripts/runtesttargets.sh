@@ -3,15 +3,18 @@
 #  Make predictions(prior,  phmmer and expression) on input files using previous 
 #  Output .csv predictions. 
 #
-TESTDIR=~/data/cafa4/testtargets
-OUTDIR=~/play/cafa4/evaluate
+TESTDIR=~/data/cafa4/testtargets/2017-2019/
+OUTDIR=~/play/cafa4/20200408
 PROG=~/data/git/cafa4/fastcafa/fastcafa.py
 CONF=~/data/git/cafa4/etc/fastcafa.conf
-METHODS="prior phmmer expression
-#DEBUG=" -d "
-DEBUG=""
-VERSION="previous"
+METHODS="expression"
+DEBUG=" -d "
+#DEBUG=""
+VERSION="2017"
 VFLAG=" -V $VERSION "
+
+mkdir -p $OUTDIR
+
 
 echo "Running on all targets..."
 for TFA in `ls $TESTDIR/*.tfa`; do
