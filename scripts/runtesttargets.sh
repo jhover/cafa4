@@ -1,21 +1,21 @@
 #!/bin/bash
 #
-#  Make predictions(prior,  phmmer and expression) on input files using previous 
+#  Make predictions on input files using old version of uniprot.
+#  Use general + all aspects individually.   
 #  Output .csv predictions. 
 #
-TESTDIR=~/data/cafa4/testtargets/2017-2019/
-OUTDIR=~/play/cafa4/20200408
+TESTDIR=~/data/cafa4/testtargets/2010-2019
+OUTDIR=~/play/cafa4/20200414
 PROG=~/data/git/cafa4/fastcafa/fastcafa.py
 CONF=~/data/git/cafa4/etc/fastcafa.conf
-METHODS="expression"
+METHODS="phmmer orthoexpression expression"
+ASPECTS="bp cc mf"
 DEBUG=" -d "
 #DEBUG=""
-VERSION="2017"
+VERSION="2010"
 VFLAG=" -V $VERSION "
 
 mkdir -p $OUTDIR
-
-
 echo "Running on all targets..."
 for TFA in `ls $TESTDIR/*.tfa`; do
 	echo "Handling $TFA..."
@@ -23,16 +23,21 @@ for TFA in `ls $TESTDIR/*.tfa`; do
 	FILENAME=`basename $TFA`
 	EXTENSION="${FILENAME##*.}"
 	FILEBASE="${FILENAME%.*}"
-	#echo "$FILENAME $FILEBASE $EXTENSION"
 	for METHOD in $METHODS; do
-		# echo "method is $METHOD"
-		PREDOUT=$OUTDIR/$FILEBASE.$VERSION.$METHOD.csv
-		
+		echo "Handling method $METHOD for all aspects..."
+		PREDOUT=$OUTDIR/$FILEBASE.$VERSION.$METHOD.all.csv		
 		echo "running $METHOD ..."
 		echo "time $PROG -C $DEBUG -c $CONF $METHOD $VFLAG -i $TFA -o $PREDOUT  "
 		echo ""
 		time $PROG -C $DEBUG -c $CONF $METHOD $VFLAG -i $TFA -o $PREDOUT 
 
+		for ASPECT in $ASPECTS; do
+			PREDOUT=$OUTDIR/$FILEBASE.$VERSION.$METHOD.$ASPECT.csv		
+			echo "Handling method $METHOD with aspect $ASPECT..."
+			echo "time $PROG -C $DEBUG -c $CONF $METHOD -g $ASPECT $VFLAG -i $TFA -o $PREDOUT  "
+			echo ""
+			time $PROG -C $DEBUG -c $CONF $METHOD -g $ASPECT $VFLAG -i $TFA -o $PREDOUT 
+		done
 	done
 	echo  "###############################################"
 done

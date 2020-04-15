@@ -522,7 +522,8 @@ def apply_go2aspect(row, godict ):
     """
     a = np.nan
     try:
-        a = godict[row.goterm]['goasp']
+        a = godict[row['goterm']]['goasp']
+        logging.debug(f"got aspect {a} from row:\n{row}")
     except KeyError:
         logging.warning(f"KeyError in godict: {row.goterm}") 
     return a
@@ -554,8 +555,7 @@ def do_expression(config, infile, outfile, usecache=True, version='2019',goasp=N
         if len(df) > 0:
             if goasp is not None:
                 logging.debug(f"Adjusting prediction limit to {goasp}")
-                df = filter_goaspect(config, df, goasp)
-                            
+                df = filter_goaspect(config, df, goasp)            
             logging.info(f"writing to outfile {outfile}")
             df.to_csv(outfile)
         else:
@@ -574,12 +574,14 @@ def do_phmmer(config, infile, outfile, usecache=True, version='current', goasp=N
     Also cache predictions....
     
     """
-    logging.info(f"running phmmer version={version}")
+    logging.info(f"running phmmer version={version} goasp={goasp}")
     infile = os.path.expanduser(infile)
     pcachedir = os.path.expanduser(config.get('phmmer','cachedir')) 
     filename = os.path.basename(infile)
     (filebase, e) = os.path.splitext(filename)
-    predcachefile = f"{pcachedir}/{filebase}.phmmer.{version}.pred.csv"
+    if goasp is None:
+        gasp = 'all'
+    predcachefile = f"{pcachedir}/{filebase}.phmmer.{version}.{goasp}.pred.csv"
     logging.debug(f"predcachefile={predcachefile}")
     
     if os.path.exists(infile):
@@ -597,6 +599,8 @@ def do_phmmer(config, infile, outfile, usecache=True, version='current', goasp=N
                 if goasp is not None:
                     logging.debug(f"Adjusting prediction limit to {goasp}")
                     df = filter_goaspect(config, df, goasp)
+                else:
+                    logging.debug(f"goasp {goasp} no change. ")
             logging.info(f"Caching to {predcachefile}")
             df.to_csv(predcachefile)
         logging.info(f"writing to outfile {outfile}")
@@ -1658,12 +1662,10 @@ def calc_phmmer_prediction(config, dataframe, usecache, version='current'):
                 newgv = ontobj[prow.goterm]
                 #logging.debug(f"goterm for row is {prow.goterm} adding...")
                 if newgv is not None:
+                    logging.debug(f"Got GO vector for {prow.goterm}")
                     gv = gv + newgv.astype(np.int64)
                 else:
-                    logging.debug(f"No GO vector for {prow.goterm}")
-                
-                #except KeyError:
-                #    logging.debug(f"No GO vector for {}")
+                    logging.warning(f"No GO vector for {prow.goterm}")
                
             #logging.debug(f"sum is {gv.sum()} ")
             # we now have a govector with all goterms indicated by this ortholog.
@@ -3219,14 +3221,19 @@ def filter_goaspect(config, dataframe, goasp):
 2      CP270_RAT  G1011600000000  GO:0110165  210381.7    
        
     """
-    logging.debug(f"filtering to goaspect {goasp}")
+    df = dataframe
+    logging.debug(f"filtering to goaspect {goasp} initial df:\n{df}")
     (godict, altids) = parse_obo(config)   
-    dataframe['goasp'] = dataframe.apply(apply_go2aspect, axis=1, godict=godict)
-    dataframe = dataframe[dataframe.goasp == goasp]
-    dropcol = ['goasp' ] 
-    dataframe.drop(columns=dropcol, inplace=True)
-    dataframe.reset_index(drop=True, inplace=True)
-    return dataframe
+    df['tmpgoasp'] = df.apply(apply_go2aspect, axis=1, godict=godict)
+    logging.debug(f"df with goaspect:\n{df}")
+    logging.debug(f"before: len(df)={len(df)}")
+    df = df[df.tmpgoasp == goasp]
+    logging.debug(f"df with goaspect:\n{df}")
+    logging.debug(f"after: len(df)={len(df)}")
+    dropcol = ['tmpgoasp' ] 
+    df.drop(columns=dropcol, inplace=True)
+    df.reset_index(drop=True, inplace=True)
+    return df
 
 
 def filter_goevidence(config, dataframe, exponly=True  ):
@@ -3318,7 +3325,8 @@ if __name__ == '__main__':
                                help='uniprot version to use')
     
     parser_prior.add_argument('-g','--goaspect', 
-                               metavar='goasp', 
+                               metavar='goaspect',
+                               choices=['bp','mf','cc'], 
                                type=str, 
                                default=None,
                                help='Limit prediction to goaspect [bp|mf|cc]' )
@@ -3346,7 +3354,8 @@ if __name__ == '__main__':
                                help='a DF .csv prediction file')
 
     parser_phmmer.add_argument('-g','--goaspect', 
-                               metavar='goasp', 
+                               metavar='goaspect', 
+                               choices=['bp','mf','cc'],
                                type=str, 
                                default=None,
                                help='Limit prediction to goaspect [bp|mf|cc]' )
@@ -3375,7 +3384,8 @@ if __name__ == '__main__':
                                help='version of uniprot to use.')
 
     parser_expr.add_argument('-g','--goaspect', 
-                               metavar='goasp', 
+                               metavar='goaspect',
+                               choices=['bp','mf','cc'], 
                                type=str, 
                                default=None,
                                help='Limit prediction to goaspect [bp|mf|cc]' )
@@ -3403,7 +3413,8 @@ if __name__ == '__main__':
                                help='version of uniprot to use.')
 
     parser_oexpr.add_argument('-g','--goaspect', 
-                               metavar='goasp', 
+                               metavar='goaspect', 
+                               choices=['bp','mf','cc'],
                                type=str, 
                                default=None,
                                help='Limit prediction to goaspect [bp|mf|cc]' )
@@ -3461,19 +3472,17 @@ if __name__ == '__main__':
                                metavar='infile', 
                                type=str, 
                                help='a .csv prediction file')        
-
-    parser_evaluate.add_argument('-a', '--aspect', 
-                               metavar='goaspect', 
-                               type=str,
-                               default=None, 
-                               help='GO aspect to limit evaluation to.') 
           
     parser_evaluate.add_argument('-o', '--outfile', 
                                metavar='outfile', 
                                type=str, 
                                help='a .csv output file with stats')    
 
-
+    parser_evaluate.add_argument('-g','--goaspect', 
+                               metavar='goaspect', 
+                               type=str, 
+                               default=None,
+                               help='Limit prediction to goaspect [bp|mf|cc]' )
 
     parser_builduniprot_test = subparsers.add_parser('build_uniprot_test',
                                           help='build and cache uniprot test source info')
@@ -3642,28 +3651,28 @@ if __name__ == '__main__':
                  args.outfile, 
                  usecache=True, 
                  version=args.version, 
-                 goasp=args.goasp )
+                 goasp=args.goaspect )
        
     if args.subcommand == 'phmmer':
         do_phmmer(cp, args.infile, 
                   args.outfile, 
                   usecache=True, 
                   version=args.version,
-                  goasp=args.goasp )
+                  goasp=args.goaspect )
     
     if args.subcommand == 'orthoexpression':
         do_orthoexpression(cp, args.infile, 
                            args.outfile, 
                            usecache=True, 
                            version=args.version,
-                           goasp=args.goasp )
+                           goasp=args.goaspect )
 
     if args.subcommand == 'expression':
         do_expression(cp, args.infile, 
                       args.outfile, 
                       usecache=True, 
                       version=args.version,
-                      goasp=args.goasp )
+                      goasp=args.goaspect )
 
     if args.subcommand == 'combine':
         if args.method == 'round_robin':
