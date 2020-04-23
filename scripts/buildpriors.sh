@@ -4,10 +4,10 @@
 # Should normally take about 20 minutes to run. 
 #
 SPECLIST="ARATH BACCR BOVIN CAEEL DANRE DICDI DROME ECOLI HUMAN MAIZE MOUSE MYCGE PIG PSEAI SCHPO RAT SALTY YEAST "
-VERSIONS="current previous"
+VERSIONS="2017  2019"
 PROG=~/data/git/cafa4/fastcafa/fastcafa.py
 CONF=~/data/git/cafa4/etc/fastcafa.conf
-OUTDIR=~/play/cafa4
+OUTDIR=~/play/cafa4/prior
 
 for VERSION in $VERSIONS; do 
 	echo "Building prior(s) for uniprot version $VERSION..."

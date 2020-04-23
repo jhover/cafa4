@@ -8,10 +8,10 @@ TESTDIR=~/data/cafa4/testtargets/2010-2019
 OUTDIR=~/play/cafa4/20200414
 PROG=~/data/git/cafa4/fastcafa/fastcafa.py
 CONF=~/data/git/cafa4/etc/fastcafa.conf
-METHODS="phmmer orthoexpression expression"
+METHODS="prior"
 ASPECTS="bp cc mf"
-DEBUG=" -d "
-#DEBUG=""
+#DEBUG=" -d "
+DEBUG=" "
 VERSION="2010"
 VFLAG=" -V $VERSION "
 

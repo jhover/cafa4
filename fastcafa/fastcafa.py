@@ -56,14 +56,21 @@ import tempfile
 import traceback
 
 import pandas as pd
-# import modin.pandas as pd
 
 import numpy as np
 np.set_printoptions(threshold=400)
 from scipy import sparse
 from sklearn import metrics
 
+import seaborn as sns
+import matplotlib.pyplot as plt
+
 import h5py
+
+mpl_logger = logging.getLogger('matplotlib')
+mpl_logger.setLevel(logging.WARNING)
+
+
 
 GOASPECTMAP= { 'biological_process' : 'bp',
                'cellular_component' : 'cc',
@@ -344,7 +351,7 @@ class ExpressionSet(object):
         return ds 
         
 
-def get_uniprot_by_object(config, usecache=True, by='pid'):
+def get_uniprot_by_object(config, usecache=True, by='pid', goaspect=None):
     goobj = get_ontology_object(config, usecache=True)
     ubxdict = get_uniprot_by(config,by=by, usecache=True)
     bystr = by.capitalize()
@@ -398,7 +405,7 @@ def get_uniprot_by(config, by='pid', usecache=True, version='2019'):
 
 
 
-def build_uniprot_by(config, by='pacc', version='2019'):
+def build_uniprot_by(config, by='pacc', version='2019', goaspect=None):
     """
 
     by = gene | pid | pacc
@@ -420,7 +427,7 @@ NOTES:  NaN expected for gene, omit...
     """
     logging.debug(f"building uniprot by={by} and version={version}")
     ontobj = get_ontology_object(config, usecache=True)
-    ubtdf = get_uniprot_byterm_df(config, usecache=True, version=version)
+    ubtdf = get_uniprot_byterm_df(config, usecache=True, version=version, goaspect=goaspect)
     ubtdf = filter_goevidence(config, ubtdf, exponly=True)
     ubtdf = ubtdf[ubtdf[by].notna()]
     ubtdf.sort_values(by=by, inplace=True)
@@ -523,7 +530,7 @@ def apply_go2aspect(row, godict ):
     a = np.nan
     try:
         a = godict[row['goterm']]['goasp']
-        logging.debug(f"got aspect {a} from row:\n{row}")
+        #logging.debug(f"got aspect {a} from row:\n{row}")
     except KeyError:
         logging.warning(f"KeyError in godict: {row.goterm}") 
     return a
@@ -931,7 +938,7 @@ def mergerankrr(df1, df2):
 def run_evaluate(config, predictfile, outfile, goaspect=None):
     """
     Consume a prediction.csv file, and score based on accuracy. 
-    X.prediction.csv
+    X.eval.csv
    
     """
     df = pd.read_csv(os.path.expanduser(predictfile), index_col=0)
@@ -982,7 +989,7 @@ def do_evaluate(config, predictdf, goaspect):
 
     """
     #logging.debug(f"got predictdf:\n{predictdf}")
-    ubgo = get_uniprot_by_object(config, by='pid', usecache=True)
+    ubgo = get_uniprot_by_object(config, by='pid', usecache=True, goaspect=goaspect)
     ontobj = get_ontology_object(config, usecache=True)
     logging.debug(f"got known uniprot and ontology object.")  
     
@@ -1001,20 +1008,26 @@ def do_evaluate(config, predictdf, goaspect):
         logging.debug(f"cgid is {cgid}")
         #ubp = get_uniprot_bypid_object(config, usecache=True)
         ubp = ubgo
-        nterms = ubp[cgid].sum()
-        ntermsum = ntermsum + nterms
-        #logging.debug(f"there are {nterms} goterms associated with {cgid}")
-        #logging.debug(f"geneid for this target is is {cgid}")
-        cdf['correct'] = cdf.apply(is_correct_apply, axis=1)
-        cdf['nterms'] = nterms
-        #cdf.reset_index(drop=True, inplace=True) 
-        logging.debug(f"cdf after assessment:\n{cdf.dtypes}\n{cdf}")
-        #logging.debug(f"cdf is:\n{cdf}")
-        #logging.debug(f"appending: outdf.columns={outdf.columns} cdf.columns={cdf.columns}")
-        cdf = calc_f1_max(cdf)
-        logging.debug(f"cid {cid}:\n{cdf}")
-        outdf = outdf.append(cdf, ignore_index=True)
-    
+        try:
+            nterms = ubp[cgid].sum()
+            if nterms > 0:
+                ntermsum = ntermsum + nterms
+                #logging.debug(f"there are {nterms} goterms associated with {cgid}")
+                #logging.debug(f"geneid for this target is is {cgid}")
+                cdf['correct'] = cdf.apply(is_correct_apply, axis=1)
+                cdf['nterms'] = nterms
+                #cdf.reset_index(drop=True, inplace=True) 
+                logging.debug(f"cdf after assessment:\n{cdf.dtypes}\n{cdf}")
+                #logging.debug(f"cdf is:\n{cdf}")
+                #logging.debug(f"appending: outdf.columns={outdf.columns} cdf.columns={cdf.columns}")
+                cdf = calc_f1_max(cdf)
+                logging.debug(f"cid {cid}:\n{cdf}")
+                outdf = outdf.append(cdf, ignore_index=True)
+            else:
+                logging.warning(f"nterms=0 ignoring.??")
+        except KeyError:
+            logging.warning(f"No entry found for {cgid}...")    
+        
     outdf['correct'] = outdf['correct'].astype(np.bool)
     #outdf['ntermsum'] = ntermsum
     logging.debug(f"outdf before pr is:\n{outdf}")
@@ -2214,16 +2227,16 @@ def calc_prior(config, usecache, species=None, version='current'):
     return freqarray
 
 
-def get_uniprot_byterm_df(config, usecache=True, version='2019'):
+def get_uniprot_byterm_df(config, usecache=True, version='2019', goaspect=None):
     logging.debug(f"called with usecache={usecache} version={version}")
-    lol = get_uniprot_byterm(config, usecache=usecache, version=version)
+    lol = get_uniprot_byterm(config, usecache=usecache, version=version, goaspect=goaspect)
     df = pd.DataFrame(lol,columns=['pacc', 'pid', 'protein', 'species', 
                                       'goterm','goasp','goev','seqlen','seq','gene'])  
     logging.debug(f"Built dataframe:\n{df}")
     return df 
 
 
-def get_uniprot_byterm(config, usecache, version='2019'):
+def get_uniprot_byterm(config, usecache, version='2019', goaspect=None):
     """
     [ {'proteinid': '001R_FRG3G', 
        'protein': '001R', 
@@ -2275,18 +2288,21 @@ def get_uniprot_byterm(config, usecache, version='2019'):
                 evcode = p['goterms'][gt][1]
                 aspcode = p['goterms'][gt][0]
                 
-                item = [ p['proteinacc'],
-                         p['proteinid'],
-                         p['protein'],
-                         p['species'],
-                         gt,
-                         aspcode,
-                         evcode, 
-                         p['seqlength'],
-                         p['sequence'], 
-                         p['gene'],
-                     ]
-                ubt.append(item)
+                if goaspect is None or aspcode == goaspect:
+                    #logging.debug(f"goaspect={goaspect} aspcode={aspcode} adding...")
+                    item = [ p['proteinacc'],
+                             p['proteinid'],
+                             p['protein'],
+                             p['species'],
+                             gt,
+                             aspcode,
+                             evcode, 
+                             p['seqlength'],
+                             p['sequence'], 
+                             p['gene'],
+                         ]
+                    ubt.append(item)
+                    
         else:
             item = [ p['proteinacc'],
                          p['proteinid'],
@@ -2427,7 +2443,7 @@ def get_uniprot_df(config, usecache=True, version='2019'):
     return df  
 
 
-def build_uniprot(config, usecache, version='2019'):
+def build_uniprot(config, usecache, version='2019', goaspect=None):
     """
     Lowest-level uniprot build. calls parsing code .dat file. 
     Builds list of dictionaries, each element is item in uniprot/sprot
@@ -3134,9 +3150,28 @@ def run_tocafa(config, infile, outfile=None, modelnum=1):
     logging.info(f"Wrote cafafile with {len(topdf.index)} entries. ")
     return s
 
-def run_summarize(config, infiles, outfile):
-    logging.debug(f'handling infiles= {infiles}')
+def run_summarize(config, infiles, outfile, method, knowledge, aspect='all', evcode='exp'):
+    """
+    Consume and merge a set of eval files, assuming provided parameters with which they 
+    were created. 
+    Produce f1max distribution graphs appropriately. 
 
+        run_summarize(cp,
+                      args.infiles # list
+                      args.outfile, # outfile. 
+                      args.method,     # phmmer, expression, prior, orthoexpression
+                      args.knowledge,  # noknow, limited
+                      args.aspects,    # all, bp, mf, cc 
+                      args.evcodes,    # exp, iea
+)
+    """
+    logging.debug(f'handling infiles= {infiles}')
+    
+    topdf = None
+
+    # exp_codes = [ x.strip() for x in config.get('uniprot','exp_codes').split(',')]
+    species_order =[x.strip() for x in config.get('summarize', 'species_order').split(',')]
+    
 
     for infile in infiles:
         basename = os.path.basename(infile)
@@ -3144,23 +3179,49 @@ def run_summarize(config, infiles, outfile):
         try:
             df = pd.read_csv(infile, index_col=0, comment="#")            
             df.drop(['f1maxtotal','pr','score'], inplace=True, axis=1)
-            means = df.drop(['correct'], axis=1)
-            meansdf = means.groupby('cid').mean()
-            sums = df.drop(['nterms','f1max','goterm'], axis=1)
-            sumsdf =  sums.groupby('cid').sum()
-            outdf = pd.merge(meansdf, sumsdf , how='outer', on=['cid'] )
-            
-            # need to keep and split cgid into protein and species. 
-            # so we can scatterplot by species. 
-            #
+            df['method'] = method
+            df['knowledge'] = knowledge
+            df['expcodes'] = evcode
+            df['aspect'] = aspect        
+            df[['gene','species']] = df.cgid.str.split('_',expand=True)
+            #logging.debug("added split gene/species")
+            #means = df.drop(['correct'], axis=1)
+            #meansdf = means.groupby('cid').mean()
+            #sums = df.drop(['nterms','f1max','goterm'], axis=1)
+            #sumsdf =  sums.groupby('cid').sum()
+            #topdf = pd.merge(df, sumsdf , how='outer', on=['cid'] )
+            if topdf is None:
+                logging.debug("topdf is none, creating...")
+                topdf = pd.DataFrame(columns=list(df.columns))
+            logging.debug(f"merging df: {df}") 
+            #topdf.append(df, ignore_index=True, sort=True)
+            topdf = pd.concat([topdf, df])
+            logging.debug(f"topdf after merge: {topdf}")
 
         except FileNotFoundError:
-            print(f"no such file {infile}")
+            logging.error(f"no such file {infile}")
+
+        except ValueError:
+            logging.warning(f"Issue reading file {infile}. empty?")
+
+    logging.debug(f"merged infiles: df:\n{topdf}")
+    sns.set()
+    chart = sns.catplot(x='species', y='f1max', kind='boxen', data=topdf, order=species_order)
+
+    chart.set(title = f"method={method}\nknowledge={knowledge} aspect={aspect} evcode={evcode}  ")
+    for ax in chart.axes.flat:
+        ax.set(ylim=(0.0,1.0))
+        for label in ax.get_xticklabels():
+            label.set_rotation(45)
     
-    ar = np.array(f1maxes)
-    meanf1max = np.mean(ar)
-    
-    print(f">meanf1max(allfiles):\t\t{meanf1max}")
+    logging.debug(f"chart obj is {chart}")
+
+    logging.debug(f"Saving figure to {outfile}.png ")
+    chart.savefig(f"{outfile}.png")
+
+    logging.debug(f"writing merged eval to {outfile}")
+    topdf.to_csv(outfile)
+
 
 
 def run_summarize_simple(config, infiles, outfile):
@@ -3601,7 +3662,7 @@ if __name__ == '__main__':
                                metavar='infiles', 
                                type=str,
                                nargs='+', 
-                               help='.csv prediction file[s]')        
+                               help='.csv evaluation file[s]')        
           
     parser_summarize.add_argument('-o', '--outfile', 
                                metavar='outfile', 
@@ -3609,7 +3670,32 @@ if __name__ == '__main__':
                                default=None,
                                help='a .csv output file for submission.') 
 
+    parser_summarize.add_argument('-m', '--method', 
+                               metavar='method', 
+                               type=str, 
+                               default=None,
+                               help='method used for predictions')
 
+    parser_summarize.add_argument('-a', '--aspect', 
+                               metavar='aspect', 
+                               type=str, 
+                               default='all',
+                               help='aspect used for predictions')
+
+    parser_summarize.add_argument('-k', '--knowledge', 
+                               metavar='knowledge', 
+                               type=str, 
+                               default='noknow',
+                               help='knowledge used for predictions')
+
+    parser_summarize.add_argument('-e', '--evcode', 
+                               metavar='evcode', 
+                               type=str, 
+                               default='exp',
+                               help='evidence codes used for term transfer')
+
+
+##############################################################################
 ##############################################################################
 
     args= parser.parse_args()
@@ -3688,8 +3774,18 @@ if __name__ == '__main__':
     if args.subcommand == 'evaluate':
         run_evaluate(cp, args.infile, args.outfile, args.goaspect)
 
+    ################## aggregate, summarize and generate figures  #######################
+
     if args.subcommand == 'summarize':
-        run_summarize(cp, args.infiles, args.outfile)
+        run_summarize(cp, 
+                      args.infiles,  # list of infiles
+                      args.outfile,  # plot is <outfile>.png 
+                      args.method,    #  phmmer, prior, expression, orthoexpression 
+                      args.knowledge, #  none, limited
+                      args.aspect,   #  all,bp,mf,cc
+                      args.evcode,   #  exp, iea (transferred?) 
+
+                      )
 
     ################## generate submission file  #######################
     
