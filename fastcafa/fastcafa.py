@@ -205,11 +205,11 @@ class UniprotByPacc(dict):
         self.log = logging.getLogger(self.kname)
         self.ontobj = ontology
         
-    def contains(self, gid, goterm):
+    def contains(self, pacc, goterm):
         """
         Return boolean   True if goterm is annotated for that pacc  
         """
-        gv = self[gid]
+        gv = self[pacc]
         #logging.debug(f"govector fo {gid} is {gv}")
         gtidx = self.ontobj.indexof(goterm)
         #logging.debug(f"goterm index for {goterm} is {gtidx}")
@@ -426,9 +426,13 @@ NOTES:  NaN expected for gene, omit...
     Returns dict for later use..
     """
     logging.debug(f"building uniprot by={by} and version={version}")
+    exponly_transfer= config.getboolean('uniprot','exponly_transfer')
+    logging.debug(f"exponly_transfer={exponly_transfer}")
     ontobj = get_ontology_object(config, usecache=True)
     ubtdf = get_uniprot_byterm_df(config, usecache=True, version=version, goaspect=goaspect)
-    ubtdf = filter_goevidence(config, ubtdf, exponly=True)
+   
+    if exponly_transfer:
+        ubtdf = filter_goevidence(config, ubtdf, exponly=True)
     ubtdf = ubtdf[ubtdf[by].notna()]
     ubtdf.sort_values(by=by, inplace=True)
     ubtdf.reset_index(drop=True, inplace=True)
@@ -500,15 +504,19 @@ def do_orthoexpression(config, infile, outfile, usecache=True, version='2019', g
     if pdf is not None:
         logging.info(f"Making expression prediction against version '{version}'")
         df = calc_orthoexpression_prediction(config, pdf, usecache, version)
-        logging.debug(f"prediction=\n{df}")#
-        if goasp is not None:
-            logging.debug(f"Adjusting prediction limit to {goasp}")
+        if df is not None:
+            logging.debug(f"prediction=\n{df}")#
             df = filter_goaspect(config, df, goasp)
-        logging.info(f"writing to outfile {outfile}")
-        df.to_csv(outfile)
-        print(df)
+            if df is not None:
+                logging.info(f"writing to outfile {outfile}")
+                df.to_csv(outfile)
+            else:
+                logging.debug(f"no data for prediction.")
+        else:
+            logging.debug(f"no data for prediction.")
     else:
         logging.info(f"No phmmer hits for infile {infile} so can't run expression.")    
+
 
 
 def apply_pid2pacc(row, idmap):
@@ -554,24 +562,24 @@ def do_expression(config, infile, outfile, usecache=True, version='2019',goasp=N
         indf['pacc'] = indf.apply(apply_pid2pacc, axis=1, idmap=p2a)
         indf['score'] = 1.0
         indf['pid'] = indf['cgid']
-        
-        #indf = get_df_from_pidlistfile()
 
         df = calc_expression_prediction(config, indf, usecache, version)
         logging.debug(f"prediction=\n{df}")
         if len(df) > 0:
-            if goasp is not None:
-                logging.debug(f"Adjusting prediction limit to {goasp}")
-                df = filter_goaspect(config, df, goasp)            
-            logging.info(f"writing to outfile {outfile}")
-            df.to_csv(outfile)
+            logging.debug(f"Adjusting prediction limit to {goasp}")
+            df = filter_goaspect(config, df, goasp)            
+            if df is not None:
+                logging.info(f"writing to outfile {outfile}")
+                df.to_csv(outfile)
+            else:
+                logging.info("No content. Not writing outfile.")
         else:
             logging.info("No content. Not writing outfile.")
         logging.info("done.")
     else:
         logging.error(f"No such infile: {infile}")
 
-     
+
 
 def do_phmmer(config, infile, outfile, usecache=True, version='current', goasp=None):
     """
@@ -609,6 +617,12 @@ def do_phmmer(config, infile, outfile, usecache=True, version='current', goasp=N
                 else:
                     logging.debug(f"goasp {goasp} no change. ")
             logging.info(f"Caching to {predcachefile}")
+            df['method'] = 'phmmer'
+            if goasp is not None:
+                df['aspect'] = goasp
+            else:
+                df['aspect'] = 'all'  
+             
             df.to_csv(predcachefile)
         logging.info(f"writing to outfile {outfile}")
         df.to_csv(outfile)
@@ -998,7 +1012,6 @@ def do_evaluate(config, predictdf, goaspect):
     cidlist = list(predictdf.cid.unique())
     logging.debug(f"cid list: {cidlist}")
 
-    
     ntermsum = 0
     for cid in cidlist:
         cdf = predictdf[predictdf.cid == cid].copy()
@@ -1041,6 +1054,8 @@ def do_evaluate(config, predictdf, goaspect):
     pr = calc_precision_recall(poslist, numtotal)
     outdf['pr'] = pr
 
+    logging.debug("Summarizing info so one row per cid...")
+    outdf = outdf.groupby('cid').max()
     return outdf
 
 
@@ -1243,7 +1258,6 @@ def execute_phmmer(config, filename, version='current'):
     So the inbound sequence files *must* contain correct geneids (or some other
     method must be used to exclude self-hits). 
 
-    
     """
     logging.debug(f"executing with filename={filename} version={version} ")
     exclude_list = [] 
@@ -1602,10 +1616,13 @@ def calc_orthoexpression_prediction(config, dataframe, usecache, version='2019')
         else:
             logging.info(f"No expression inference for {cid}. No predictions...")
 
-    logging.debug(f"made dataframe for all:\n{topdf}")
-    return topdf
-
-
+    if len(topdf) > 0:
+        logging.debug(f"made dataframe for all:\n{topdf}")
+        topdf['method'] = 'orthoexpression'
+        return topdf
+    else:
+        logging.debug(f"dataframe empty. returning None")
+        return None
 
 def calc_phmmer_prediction(config, dataframe, usecache, version='current'):
     """
@@ -1723,6 +1740,7 @@ def calc_phmmer_prediction(config, dataframe, usecache, version='current'):
         logging.debug(f"made dataframe for cid {cid}:\n{df}")
         topdf = topdf.append(df, ignore_index=True, sort=True)
         
+    topdf['method'] = 'phmmer'
     logging.debug(f"made dataframe for all:\n{topdf}")
     return topdf
 
@@ -1852,6 +1870,7 @@ def calc_expression_prediction(config, dataframe, usecache, version='2019'):
             logging.debug(f"No expression data for species {scode}")
             
     logging.debug(f"made dataframe for all:\n{topdf}")
+    topdf['method'] = 'expression'
     return topdf
 
 
@@ -1881,45 +1900,6 @@ def check_filename_for_taxids(config, filename):
     return None
     
 
-def make_prior_prediction_old(config, infile, species=None):
-    """
-    Same as calc_phmmer_prediction, but assigns prior likelihoods as score
-    Automatically detects species names/codes in filename, uses. 
-    
-    """
-    cdf = parse_tfa_file(infile)
-    logging.debug(f"Got cid/cgid frame:\n{cdf}") 
-    
-    fnspecies = check_filename_for_taxids(config, infile)
-    if species is None and fnspecies is not None:
-        species = fnspecies
-        logging.debug(f"Auto-identified species {species} from filename taxonid.")
-    pdf = get_prior_df(config, True, species)
-    logging.debug(f"Got prior frame:\n{pdf}")     
-    # max_goterms = config.getint('global','max_goterms')
-    # logging.debug(f"max_goterms={max_goterms}")
-    
-    # Dataframe to collect all calculated values. 
-    topdf = pd.DataFrame(columns=['cid','goterm','score','cgid'])
-    # This pulls out values, sorted by whatever 'score' is...
-    # pdf = pdf.nlargest(max_goterms, 'pest')
-
-    for (i, row) in cdf.iterrows():  
-        #logging.debug(f"Row is:\n{row}")
-        cid = row.cid
-        cgid = row.cgid
-        logging.debug(f"cid is {cid} cgid is {cgid}")
-        df = pd.DataFrame(pdf,copy=True ) 
-        #df['goterm'] = pdf['goterm']
-        #df['score'] = pdf['pest']
-        df['cid'] = cid
-        df['cgid'] = cgid
-        df.rename(columns = {'pest':'score'}, inplace = True)   
-        logging.debug(f"made dataframe for cid {cid}:\n{df}")
-        topdf = topdf.append(df, ignore_index=True)
-    logging.debug(f"got out df types:\n{topdf.dtypes}\n{topdf}")
-    return topdf
-
 def make_prior_prediction(config, infile, species=None):
     """
     Same as calc_phmmer_prediction, but assigns prior likelihoods as score
@@ -1944,6 +1924,8 @@ def make_prior_prediction(config, infile, species=None):
             outlist.append([cid, cgid, goterm, score])
     logging.debug(f"make list of lists length={len(outlist)}")
     outdf = pd.DataFrame(outlist, columns=['cid','cgid','goterm','score'] )
+    outdf['method'] = 'prior'
+    
     return outdf
 
 
@@ -2185,8 +2167,9 @@ def calc_prior(config, usecache, species=None, version='current'):
         gtlength = len(ontobj.gotermlist)
         logging.debug(f"building sprot. species={species}")
         sprot = get_uniprot_byterm(config, usecache=True, version=version)
-        sdf = pd.DataFrame(sprot,columns=['pacc', 'pid', 'protein', 'species',
-                                          'goterm','goasp','goev', 'seqlen', 'seq', 'gene'                                        
+        sdf = pd.DataFrame(sprot,columns=['pacc', 'pid', 'protein', 
+                                          'species', 'goterm','goasp','goev', 
+                                          'seqlen', 'seq', 'gene'                                        
                                           ])
         logging.debug(f"Built dataframe:\n{sdf}")    
         
@@ -3285,16 +3268,17 @@ def filter_goaspect(config, dataframe, goasp):
     df = dataframe
     logging.debug(f"filtering to goaspect {goasp} initial df:\n{df}")
     (godict, altids) = parse_obo(config)   
-    df['tmpgoasp'] = df.apply(apply_go2aspect, axis=1, godict=godict)
-    logging.debug(f"df with goaspect:\n{df}")
-    logging.debug(f"before: len(df)={len(df)}")
-    df = df[df.tmpgoasp == goasp]
-    logging.debug(f"df with goaspect:\n{df}")
-    logging.debug(f"after: len(df)={len(df)}")
-    dropcol = ['tmpgoasp' ] 
-    df.drop(columns=dropcol, inplace=True)
-    df.reset_index(drop=True, inplace=True)
-    return df
+    df['aspect'] = df.apply(apply_go2aspect, axis=1, godict=godict)
+    logging.debug(f"df len={len(df)} with aspect:\n{df}")
+    if goasp is not None:
+        df = df[df.aspect == goasp]
+        df.reset_index(drop=True, inplace=True)
+    logging.debug(f"df len={len(df)} after filtering goaspect:\n{df}")
+    if len(df) > 0:
+        return df
+    else:
+        logging.debug(f"no data with aspect {goasp}")
+        return None
 
 
 def filter_goevidence(config, dataframe, exponly=True  ):
@@ -3543,7 +3527,7 @@ if __name__ == '__main__':
                                metavar='goaspect', 
                                type=str, 
                                default=None,
-                               help='Limit prediction to goaspect [bp|mf|cc]' )
+                               help='Limit prediction to goaspect [bp|mf|cc|all]' )
 
     parser_builduniprot_test = subparsers.add_parser('build_uniprot_test',
                                           help='build and cache uniprot test source info')
@@ -3772,19 +3756,21 @@ if __name__ == '__main__':
         do_testset(cp, args.numseq, args.species, args.outfile, args.limited, args.previous, args.current )
 
     if args.subcommand == 'evaluate':
+        # make bulk processing easier...
+        if args.goaspect == 'all':
+            args.goaspect = None
         run_evaluate(cp, args.infile, args.outfile, args.goaspect)
 
     ################## aggregate, summarize and generate figures  #######################
 
     if args.subcommand == 'summarize':
         run_summarize(cp, 
-                      args.infiles,  # list of infiles
-                      args.outfile,  # plot is <outfile>.png 
+                      args.infiles,   #  list of infiles
+                      args.outfile,   #  plot is <outfile>.png 
                       args.method,    #  phmmer, prior, expression, orthoexpression 
-                      args.knowledge, #  none, limited
-                      args.aspect,   #  all,bp,mf,cc
-                      args.evcode,   #  exp, iea (transferred?) 
-
+                      args.knowledge, #  noknow, limited
+                      args.aspect,    #  all,bp,mf,cc
+                      args.evcode,    #  exp, iea (transferred?) 
                       )
 
     ################## generate submission file  #######################

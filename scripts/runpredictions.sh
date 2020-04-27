@@ -5,11 +5,12 @@
 #  Output .csv predictions. 
 #
 TESTDIR=~/data/cafa4/testtargets/2010-2019
-OUTDIR=~/play/cafa4/20200414
+OUTDIR=~/play/cafa4/ismb2
 PROG=~/data/git/cafa4/fastcafa/fastcafa.py
 CONF=~/data/git/cafa4/etc/fastcafa.conf
-METHODS="prior"
-ASPECTS="bp cc mf"
+#METHODS="prior phmmer expression orthoexpression"
+METHODS="phmmer"
+ASPECTS="bp cc mf all"
 #DEBUG=" -d "
 DEBUG=" "
 VERSION="2010"
@@ -25,11 +26,6 @@ for TFA in `ls $TESTDIR/*.tfa`; do
 	FILEBASE="${FILENAME%.*}"
 	for METHOD in $METHODS; do
 		echo "Handling method $METHOD for all aspects..."
-		PREDOUT=$OUTDIR/$FILEBASE.$VERSION.$METHOD.all.csv		
-		echo "running $METHOD ..."
-		echo "time $PROG -C $DEBUG -c $CONF $METHOD $VFLAG -i $TFA -o $PREDOUT  "
-		echo ""
-		time $PROG -C $DEBUG -c $CONF $METHOD $VFLAG -i $TFA -o $PREDOUT 
 
 		for ASPECT in $ASPECTS; do
 			PREDOUT=$OUTDIR/$FILEBASE.$VERSION.$METHOD.$ASPECT.csv		

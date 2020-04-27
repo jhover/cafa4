@@ -22,7 +22,7 @@ TESTDIR=~/data/cafa4/testtargets
 
 PROG=~/git/cafa4/fastcafa/fastcafa.py
 CONF=~/git/cafa4/etc/fastcafa.conf
-METHODS="prior phmmer expression"
+METHODS="prior phmmer expression orthoexpression"
 PREDTYPES="prior phmmer expression phmmer_prior phmmer_expression phmmer_expression_prior phmmer_prior_expression expression_phmmer"
 # PREDTYPES="prior phmmer expression phmmer_prior phmmer_prior_expression"  
 #DEBUG="-d "
