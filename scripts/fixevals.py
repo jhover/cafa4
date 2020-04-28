@@ -15,23 +15,17 @@ from fastcafa.fastcafa import *
 if not len(sys.argv) > 1:
     print("need input file arg(s)")
     sys.exit()
-f1maxes = []
 
-topdf = None  
   
 infiles = sys.argv[1:]
 for infile in infiles:
     basename = os.path.basename(infile)
-    # print(f"{infile}")
+    print(f"handling {infile}")
     try:
         df = pd.read_csv(infile, index_col=0, comment="#")
-        if topdf is None:
-            topdf = pd.DataFrame(columns=list(df.columns))   
-        topdf = topdf.append(df, ignore_index=True, sort=True)
+        df['method'] = 'phmmer'
+        df['aspect'] = 'all'
+        df.to_csv(infile)
     
     except:
         print('something went wrong')
-
-topdf.to_csv(sys.stdout)
-
-

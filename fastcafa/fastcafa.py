@@ -17,8 +17,8 @@
 # species   all caps code                                              MOUSE   PONAB
 # goterms   (in dictionaries, not DFs)
 # goterm    Gene Ontology Annotation ID                                GO:0005634
-# goasp     biological process|molecular function|cellular component   bp mf cc
-# goev      evidence code for GO annotation.                          IEA 
+# aspect    biological process|molecular function|cellular component   bp mf cc
+# goev      evidence code for GO annotation.                           IEA 
 # eval      BLAST/HMMER/PHMMER expect statistic                        1.000000e-126
 # bias      Adjustement to score for char prevalence                   3.5
 # pscore    PHMMER bit-score                                           400.3
@@ -594,8 +594,6 @@ def do_phmmer(config, infile, outfile, usecache=True, version='current', goasp=N
     pcachedir = os.path.expanduser(config.get('phmmer','cachedir')) 
     filename = os.path.basename(infile)
     (filebase, e) = os.path.splitext(filename)
-    if goasp is None:
-        gasp = 'all'
     predcachefile = f"{pcachedir}/{filebase}.phmmer.{version}.{goasp}.pred.csv"
     logging.debug(f"predcachefile={predcachefile}")
     
@@ -606,29 +604,27 @@ def do_phmmer(config, infile, outfile, usecache=True, version='current', goasp=N
             df = pd.read_csv(predcachefile, index_col=0)
         else:      
             pdf = get_phmmer_df(config, infile, version)
-            logging.info(f"got phmmer df:\n{pdf}")
             if pdf is not None:
+                logging.info(f"got phmmer df:\n{pdf}")
                 logging.info("making phmmer prediction...")
                 df = calc_phmmer_prediction(config, pdf, usecache, version)
                 logging.debug(f"prediction=\n{df}")
-                if goasp is not None:
+                if df is not None:
                     logging.debug(f"Adjusting prediction limit to {goasp}")
                     df = filter_goaspect(config, df, goasp)
+                    logging.info(f"Caching to {predcachefile}")
+                    df['method'] = 'phmmer'
+                    df.to_csv(predcachefile)
+                    logging.info(f"writing to outfile {outfile}")
+                    df.to_csv(outfile)
+                    logging.info("done.")
                 else:
-                    logging.debug(f"goasp {goasp} no change. ")
-            logging.info(f"Caching to {predcachefile}")
-            df['method'] = 'phmmer'
-            if goasp is not None:
-                df['aspect'] = goasp
+                    logging.warning("No phmmer hits. No output.")
             else:
-                df['aspect'] = 'all'  
-             
-            df.to_csv(predcachefile)
-        logging.info(f"writing to outfile {outfile}")
-        df.to_csv(outfile)
-        logging.info("done.")
+                logging.warning("No phmmer hits. No output.")
     else:
         logging.error(f"No such infile: {infile}")
+
 
 
 def parse_tfa_file( infile):
@@ -692,14 +688,15 @@ def do_prior(config, infile, outfile, usecache=True, species=None, version='curr
     logging.info("making prior prediction...")
     df = make_prior_prediction(config, infile, species)
     logging.debug(f"prediction=\n{df}")
-    if goasp is not None:
-        logging.debug(f"Adjusting prediction limit to {goasp}")
-        df = filter_goaspect(config, df, goasp)
-        
-    logging.info(f"writing to outfile {outfile}")
-    df.to_csv(outfile)
+    logging.debug(f"Adjusting prediction limit to {goasp}")
+    df = filter_goaspect(config, df, goasp)        
+    if len(df) > 0:
+        logging.info(f"writing to outfile {outfile}")
+        df.to_csv(outfile)
+    else:
+        logging.warning(f"No data. Not writing to outfile.")
     logging.info("done.")
-    print(df)
+
 
   
 
@@ -1672,7 +1669,6 @@ def calc_phmmer_prediction(config, dataframe, usecache, version='current'):
         cdf = pdf[pdf.cid == cid]
         cgid = cdf.reset_index().iloc[0].cgid       
         logging.debug(f"cgid for cid {cid} is {cgid}")
-
         logging.debug(f"one cid df:\n{cdf}")
         #               cid           eval  pscore  bias    pacc         pid        cgid
         # 1  G1009000000001  5.700000e-178   594.8   2.0  P04218    OX2G_RAT  OX2G_MOUSE
@@ -1697,11 +1693,11 @@ def calc_phmmer_prediction(config, dataframe, usecache, version='current'):
                 else:
                     logging.warning(f"No GO vector for {prow.goterm}")
                
-            #logging.debug(f"sum is {gv.sum()} ")
             # we now have a govector with all goterms indicated by this ortholog.
             # each entry is sum of number of times that goterm was indicated (as annotated or
             # parent of an annotation term).
             # gv = array([123,   0,   3,   7, 345, 0])
+        
         logging.debug(f"pscore={pscore} udf=\n{udf}")
         
         if score_method == 'phmmer_score':
@@ -1717,10 +1713,7 @@ def calc_phmmer_prediction(config, dataframe, usecache, version='current'):
         if score_method == 'phmmer_score_weighted':
             #logging.debug(f"gv.dtype={gv.dtype} max={gv.max()} pscore={pscore}")
             gv = gv * pscore
-            #logging.debug(f"after gv.dtype={gv.dtype}") 
-            
 
-        #logging.debug(f"gv: {matrix_info(gv)}")
         gvnz = gv > 0
         #logging.debug(f"gvnz: {matrix_info(gvnz)}")
         #logging.debug(f"gtarray:length: {len(gtarray)} type:{type(gtarray)}")
@@ -1732,17 +1725,22 @@ def calc_phmmer_prediction(config, dataframe, usecache, version='current'):
                            'goterm': gotermar, 
                            'score' : govalar, 
                            'cgid' : cgidar })
+        if len(df) > 0:
+            logging.debug(f"dataframe is:\n{df}")
+            # This pulls out values, sorted by whatever 'score' is...
+            df = df.nlargest(max_goterms, 'score')
+            logging.debug(f"made dataframe for cid {cid}:\n{df}")
+            topdf = topdf.append(df, ignore_index=True, sort=True)
+        else:
+            logging.warning(f"No data for cid: {cid}")
         
-        logging.debug(f"dataframe is:\n{df}")
-        # This pulls out values, sorted by whatever 'score' is...
-        df = df.nlargest(max_goterms, 'score')
-        # df.sort_values(by='pest', ascending=False)
-        logging.debug(f"made dataframe for cid {cid}:\n{df}")
-        topdf = topdf.append(df, ignore_index=True, sort=True)
-        
-    topdf['method'] = 'phmmer'
-    logging.debug(f"made dataframe for all:\n{topdf}")
-    return topdf
+    if len(topdf) > 0:
+        topdf['method'] = 'phmmer'
+        logging.debug(f"made dataframe for all:\n{topdf}")
+        return topdf
+    else:
+        logging.warning("No data for input.")
+        return None
 
 
 def calc_expression_prediction(config, dataframe, usecache, version='2019'):
@@ -1869,10 +1867,13 @@ def calc_expression_prediction(config, dataframe, usecache, version='2019'):
         else:
             logging.debug(f"No expression data for species {scode}")
             
-    logging.debug(f"made dataframe for all:\n{topdf}")
     topdf['method'] = 'expression'
-    return topdf
-
+    if len(topdf) > 0:
+        logging.debug(f"made dataframe for all:\n{topdf}")
+        return topdf
+    else:
+        logging.warning("No data for input...")
+        return None
 
 
 def check_filename_for_taxids(config, filename):
@@ -3256,7 +3257,7 @@ def matrix_debug(matrix):
 
 def filter_goaspect(config, dataframe, goasp):
     """
-    Adds goasp column. 
+    Adds aspect column. 
     Removes goterms from incorrect aspect. Re-indexes. 
 
             cgid             cid      goterm     score  
@@ -3400,7 +3401,7 @@ if __name__ == '__main__':
 
     parser_phmmer.add_argument('-g','--goaspect', 
                                metavar='goaspect', 
-                               choices=['bp','mf','cc'],
+                               choices=['bp','mf','cc','all'],
                                type=str, 
                                default=None,
                                help='Limit prediction to goaspect [bp|mf|cc]' )
@@ -3430,7 +3431,7 @@ if __name__ == '__main__':
 
     parser_expr.add_argument('-g','--goaspect', 
                                metavar='goaspect',
-                               choices=['bp','mf','cc'], 
+                               choices=['bp','mf','cc','all'], 
                                type=str, 
                                default=None,
                                help='Limit prediction to goaspect [bp|mf|cc]' )
@@ -3459,7 +3460,7 @@ if __name__ == '__main__':
 
     parser_oexpr.add_argument('-g','--goaspect', 
                                metavar='goaspect', 
-                               choices=['bp','mf','cc'],
+                               choices=['bp','mf','cc','all'],
                                type=str, 
                                default=None,
                                help='Limit prediction to goaspect [bp|mf|cc]' )
@@ -3717,6 +3718,8 @@ if __name__ == '__main__':
     ################## generate prediction file #######################
     
     if args.subcommand == 'prior':
+        if args.goaspect == 'all':
+            args.goaspect = None
         do_prior(cp, args.infile, 
                  args.outfile, 
                  usecache=True, 
@@ -3724,6 +3727,10 @@ if __name__ == '__main__':
                  goasp=args.goaspect )
        
     if args.subcommand == 'phmmer':
+        # make bulk processing easier...
+        if args.goaspect == 'all':
+            args.goaspect = None
+        
         do_phmmer(cp, args.infile, 
                   args.outfile, 
                   usecache=True, 
@@ -3731,6 +3738,9 @@ if __name__ == '__main__':
                   goasp=args.goaspect )
     
     if args.subcommand == 'orthoexpression':
+        # make bulk processing easier...
+        if args.goaspect == 'all':
+            args.goaspect = None
         do_orthoexpression(cp, args.infile, 
                            args.outfile, 
                            usecache=True, 
@@ -3738,6 +3748,9 @@ if __name__ == '__main__':
                            goasp=args.goaspect )
 
     if args.subcommand == 'expression':
+        # make bulk processing easier...
+        if args.goaspect == 'all':
+            args.goaspect = None
         do_expression(cp, args.infile, 
                       args.outfile, 
                       usecache=True, 

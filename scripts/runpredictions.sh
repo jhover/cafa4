@@ -8,11 +8,12 @@ TESTDIR=~/data/cafa4/testtargets/2010-2019
 OUTDIR=~/play/cafa4/ismb2
 PROG=~/data/git/cafa4/fastcafa/fastcafa.py
 CONF=~/data/git/cafa4/etc/fastcafa.conf
-#METHODS="prior phmmer expression orthoexpression"
-METHODS="phmmer"
-ASPECTS="bp cc mf all"
-#DEBUG=" -d "
-DEBUG=" "
+METHODS="prior phmmer expression orthoexpression"
+#METHODS="phmmer"
+#ASPECTS="bp cc mf all"
+ASPECTS="bp"
+DEBUG=" -d "
+#DEBUG=" "
 VERSION="2010"
 VFLAG=" -V $VERSION "
 
@@ -29,10 +30,14 @@ for TFA in `ls $TESTDIR/*.tfa`; do
 
 		for ASPECT in $ASPECTS; do
 			PREDOUT=$OUTDIR/$FILEBASE.$VERSION.$METHOD.$ASPECT.csv		
-			echo "Handling method $METHOD with aspect $ASPECT..."
-			echo "time $PROG -C $DEBUG -c $CONF $METHOD -g $ASPECT $VFLAG -i $TFA -o $PREDOUT  "
-			echo ""
-			time $PROG -C $DEBUG -c $CONF $METHOD -g $ASPECT $VFLAG -i $TFA -o $PREDOUT 
+			if [ -f "$PREDOUT" ]; then
+				echo "Output exists. Skipping..."
+			else
+				echo "Handling method $METHOD with aspect $ASPECT..."
+				echo "time $PROG -C $DEBUG -c $CONF $METHOD -g $ASPECT $VFLAG -i $TFA -o $PREDOUT  "
+				echo ""
+				time $PROG -C $DEBUG -c $CONF $METHOD -g $ASPECT $VFLAG -i $TFA -o $PREDOUT 
+			fi
 		done
 	done
 	echo  "###############################################"

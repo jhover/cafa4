@@ -9,7 +9,7 @@ PROG=~/data/git/cafa4/fastcafa/fastcafa.py
 CONF=~/data/git/cafa4/etc/fastcafa.conf
 
 KNOWLEDGE="noknow limited"
-METHODS="prior phmmer expression orthoexpression"
+METHODS="phmmer"
 ASPECTS="all bp cc mf "
 
 VERSION="2010"
@@ -47,6 +47,8 @@ for KNOW in $KNOWLEDGE; do
 					echo "time $PROG -C $DEBUG -c $CONF evaluate -g $ASPECT -i $FILE -o $OUTFILE "
 					echo ""
 					time $PROG -C $DEBUG -c $CONF evaluate -g $ASPECT -i $FILE -o $OUTFILE
+				else
+					echo "Output exists. Skipping..."				
 				fi
 			done
 		done
