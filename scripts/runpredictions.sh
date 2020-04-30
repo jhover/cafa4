@@ -8,12 +8,11 @@ TESTDIR=~/data/cafa4/testtargets/2010-2019
 OUTDIR=~/play/cafa4/ismb2
 PROG=~/data/git/cafa4/fastcafa/fastcafa.py
 CONF=~/data/git/cafa4/etc/fastcafa.conf
-METHODS="prior phmmer expression orthoexpression"
-#METHODS="phmmer"
-#ASPECTS="bp cc mf all"
-ASPECTS="bp"
-DEBUG=" -d "
-#DEBUG=" "
+#METHODS="prior phmmer expression orthoexpression"
+METHODS="phmmer expression orthoexpression"
+ASPECTS="all"
+#DEBUG=" -d "
+DEBUG=" "
 VERSION="2010"
 VFLAG=" -V $VERSION "
 
@@ -29,6 +28,7 @@ for TFA in `ls $TESTDIR/*.tfa`; do
 		echo "Handling method $METHOD for all aspects..."
 
 		for ASPECT in $ASPECTS; do
+			echo "Handling aspect $ASPECT..."
 			PREDOUT=$OUTDIR/$FILEBASE.$VERSION.$METHOD.$ASPECT.csv		
 			if [ -f "$PREDOUT" ]; then
 				echo "Output exists. Skipping..."

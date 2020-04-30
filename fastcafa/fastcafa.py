@@ -1925,8 +1925,7 @@ def make_prior_prediction(config, infile, species=None):
             outlist.append([cid, cgid, goterm, score])
     logging.debug(f"make list of lists length={len(outlist)}")
     outdf = pd.DataFrame(outlist, columns=['cid','cgid','goterm','score'] )
-    outdf['method'] = 'prior'
-    
+    outdf['method'] = 'prior'  
     return outdf
 
 
@@ -2152,7 +2151,7 @@ def calc_prior(config, usecache, species=None, version='current'):
     smo = get_specmap_object(config)
     
     if species is None:
-        fspec = 'GLOBAL'
+        fspec = 'all'
     else:
         fspec = smo.get_taxonid(species)
 
@@ -3372,10 +3371,10 @@ if __name__ == '__main__':
     
     parser_prior.add_argument('-g','--goaspect', 
                                metavar='goaspect',
-                               choices=['bp','mf','cc'], 
+                               choices=['bp','mf','cc','all'], 
                                type=str, 
                                default=None,
-                               help='Limit prediction to goaspect [bp|mf|cc]' )
+                               help='Limit prediction to goaspect [bp|mf|cc|all]' )
 
 
 ################################ phmmer prediction ########################################

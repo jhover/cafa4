@@ -9,13 +9,13 @@ PROG=~/data/git/cafa4/fastcafa/fastcafa.py
 CONF=~/data/git/cafa4/etc/fastcafa.conf
 
 KNOWLEDGE="noknow limited"
-METHODS="phmmer"
-ASPECTS="all bp cc mf "
+METHODS="expression phmmer orthoexpression prior"
+ASPECTS="all"
 
 VERSION="2010"
 VFLAG=" -V $VERSION "
-DEBUG=" -d "
-#DEBUG=" "
+#DEBUG=" -d "
+DEBUG=" "
 
 mkdir -p $OUTDIR
 echo "Running on all targets..."
