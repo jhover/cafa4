@@ -20,7 +20,7 @@
 # aspect    biological process|molecular function|cellular component   bp mf cc
 # goev      evidence code for GO annotation.                           IEA 
 # eval      BLAST/HMMER/PHMMER expect statistic                        1.000000e-126
-# bias      Adjustement to score for char prevalence                   3.5
+# bias      Adjustment to score for char prevalence                   3.5
 # pscore    PHMMER bit-score                                           400.3
 # db        database against which orthology query is done             sp (swissprot)
 # score     General numeric score of a prediction. [ any scalar ]
@@ -69,7 +69,6 @@ import h5py
 
 mpl_logger = logging.getLogger('matplotlib')
 mpl_logger.setLevel(logging.WARNING)
-
 
 
 GOASPECTMAP= { 'biological_process' : 'bp',
