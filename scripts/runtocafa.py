@@ -1,21 +1,27 @@
-#!/bin/bash
+#!/usr/bin/env python
 #
-#  Run evaluations on all predictions in testdir
-#  by aspect and all. 
+#  Run tocafa() on all predictions in testdir
+#  by configured parameters. 
+#  teamID_modelNo_taxonID_go.txt
 #
-INDIR=~/play/cafa4/ismb2
-OUTDIR=~/play/ismb
-PROG=~/data/git/cafa4/fastcafa/fastcafa.py
-CONF=~/data/git/cafa4/etc/fastcafa.conf
+#
 
-KNOWLEDGE="noknow"
+import os 
+
+INDIR='~/play/cafa4/ismb2'
+OUTDIR='~/play/cafa4/ismb2/tocafa'
+PROG='~/data/git/cafa4/fastcafa/fastcafa.py'
+CONF='~/data/git/cafa4/etc/fastcafa.conf'
+
+KNOWLEDGE="noknow limited"
 METHODS="expression phmmer orthoexpression prior"
-ASPECTS="mf cc"
+ASPECTS="all"
 
 VERSION="2010"
 VFLAG=" -V $VERSION "
 #DEBUG=" -d "
 DEBUG=" "
+MODELNUM="1"
 
 mkdir -p $OUTDIR
 echo "Running on all targets..."

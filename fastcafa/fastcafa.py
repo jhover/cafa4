@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 #
-#
-#
 #   ************************CANONICAL COLUMNS*********************************
 #   
 # COLUMN    DESCRIPTION               MAPPINGS                         EXAMPLES
@@ -27,7 +25,6 @@
 # pest      Probability estimate for prediction.   [.01-1.0]           0.68    
 # seq       Raw (protein) sequence. 
 # seqlen    Number of AA
-
 
 __author__ = "John Hover"
 __copyright__ = "2019 John Hover"
@@ -515,7 +512,6 @@ def do_orthoexpression(config, infile, outfile, usecache=True, version='2019', g
             logging.debug(f"no data for prediction.")
     else:
         logging.info(f"No phmmer hits for infile {infile} so can't run expression.")    
-
 
 
 def apply_pid2pacc(row, idmap):
@@ -1100,6 +1096,7 @@ def calc_f1_max(dataframe):
             #logging.debug(f"pr[{i}] = {pr}")
             rc = (numtrue / nterms )
             #logging.debug(f"rc[{i}] = {rc}")
+            # from Cafa tool:   f = (2*pr*rc)/(pr+rc)  SAME VALUE
             f1 = 2 * ( (pr * rc) / (pr + rc ) )
             logging.debug(f"{row.cid}: {row.goterm} {logstr}. f1={f1}")
         except ZeroDivisionError:
