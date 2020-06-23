@@ -9,7 +9,7 @@ CONF=~/git/cafa4/etc/fastcafa.conf
 NUMSEQ=300
 OLD=2010
 NEW=2019
-OUTDIR=~/data/ismb/testtargets/$OLD-$NEW
+OUTDIR=~/play/ismb/testtargets/$OLD-$NEW
 
 mkdir -p $OUTDIR
 
