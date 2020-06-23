@@ -1046,8 +1046,8 @@ def do_evaluate(config, predictdf, goaspect):
     pr = calc_precision_recall(poslist, numtotal)
     outdf['pr'] = pr
 
-    logging.debug("Summarizing info so one row per cid...")
-    outdf = outdf.groupby('cid').max()
+    # logging.debug("Summarizing info so one row per cid...")
+    # outdf = outdf.groupby('cid').max()
     return outdf
 
 
