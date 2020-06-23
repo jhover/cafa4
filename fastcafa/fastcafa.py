@@ -2636,7 +2636,7 @@ def get_newannotated_df(config , limited=False, previous='2017', current='2019' 
         #dataframe.reset_index(drop=True, inplace=True) 
         
     # get current uniprot, experimental only.
-    unow = get_uniprot_byterm_df(config, usecache=True, exponly=True, version=current) 
+    unow = get_uniprot_byterm_df(config, usecache=True, version=current) 
     unow = unow[unow.goterm.notna()]
     logging.debug(f"current experimentally annotated:\n{unow}")
     
