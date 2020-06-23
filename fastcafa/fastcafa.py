@@ -2600,7 +2600,7 @@ def get_newannotated_df(config , limited=False, previous='2017', current='2019' 
     exp_goev=[ 'EXP', 'IDA', 'IMP', 'IGI', 'IEP' ]
     
     # get previous uniprot any evidence type 
-    uprev = get_uniprot_byterm_df(config, usecache=True, exponly=False, version=previous)
+    uprev = get_uniprot_byterm_df(config, usecache=True, version=previous)
     uprevunannot = uprev[uprev.goterm.isna()]
     uprevunannotp = uprevunannot['pacc'].unique()
     logging.debug(f"{len(uprevunannotp)} unique un-annotated proteins.")
