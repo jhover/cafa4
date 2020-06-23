@@ -4,13 +4,13 @@
 #  Use general + all aspects individually.   
 #  Output .csv predictions. 
 #
-TESTDIR=~/data/cafa4/testtargets/2010-2019
-OUTDIR=~/play/cafa4/ismb2
+TESTDIR=~/play/ismb/testtargets/2010-2019
+OUTDIR=~/play/ismb/
 PROG=~/data/git/cafa4/fastcafa/fastcafa.py
 CONF=~/data/git/cafa4/etc/fastcafa.conf
 #METHODS="prior phmmer expression orthoexpression"
-METHODS="phmmer expression orthoexpression"
-ASPECTS="all"
+METHODS="prior phmmer expression orthoexpression"
+ASPECTS="bp cc mf all"
 #DEBUG=" -d "
 DEBUG=" "
 VERSION="2010"
