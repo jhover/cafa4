@@ -2062,9 +2062,9 @@ def make_prior_prediction(config, infile, species=None):
     
     for (cid, cgid) in tfalol:
         for (goterm, score) in plol:
-            outlist.append([cid, cgid, goterm, score])
+            outlist.append([ cgid, cid, goterm, score])
     logging.debug(f"make list of lists length={len(outlist)}")
-    outdf = pd.DataFrame(outlist, columns=['cid','cgid','goterm','score'] )
+    outdf = pd.DataFrame(outlist, columns=['cgid','cid', 'goterm','score'] )
     outdf['method'] = 'prior'  
     return outdf
 
