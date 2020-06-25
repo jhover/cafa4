@@ -3,16 +3,16 @@
 #  Run evaluations on all predictions in testdir
 #  by aspect and all. 
 #
-INDIR=~/play/cafa4/ismb2
-OUTDIR=~/play/ismb
+INDIR=~/play/ismb/noknow
+OUTDIR=~/play/ismb/evaluate
 PROG=~/data/git/cafa4/fastcafa/fastcafa.py
 CONF=~/data/git/cafa4/etc/fastcafa.conf
 
 KNOWLEDGE="noknow"
 METHODS="expression phmmer orthoexpression prior"
-ASPECTS="mf cc"
+ASPECTS="bp mf cc all"
 
-VERSION="2010"
+#VERSION="2010"
 VFLAG=" -V $VERSION "
 #DEBUG=" -d "
 DEBUG=" "

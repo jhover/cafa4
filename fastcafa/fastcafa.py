@@ -1025,7 +1025,8 @@ def do_evaluate(config, predictdf, goaspect):
                 logging.debug(f"cdf after assessment:\n{cdf.dtypes}\n{cdf}")
                 #logging.debug(f"cdf is:\n{cdf}")
                 #logging.debug(f"appending: outdf.columns={outdf.columns} cdf.columns={cdf.columns}")
-                cdf = calc_f1_max(cdf)
+                #cdf = calc_f1_max(cdf)
+                cdf = calc_f1(cdf)
                 logging.debug(f"cid {cid}:\n{cdf}")
                 outdf = outdf.append(cdf, ignore_index=True)
             else:
@@ -1033,18 +1034,18 @@ def do_evaluate(config, predictdf, goaspect):
         except KeyError:
             logging.warning(f"No entry found for {cgid}...")    
         
-    outdf['correct'] = outdf['correct'].astype(np.bool)
+    #outdf['correct'] = outdf['correct'].astype(np.bool)
     #outdf['ntermsum'] = ntermsum
-    logging.debug(f"outdf before pr is:\n{outdf}")
-    outdf = calc_f1_max_overall(outdf)
-    pos = outdf[outdf.correct == True]
-    logging.debug(f"positives is:\n{pos}")
-    poslist = list(pos.index.values)
-    numtotal = len(predictdf)
-    logging.debug(f"numtotal is {numtotal}")    
-    logging.debug(f"len(poslist) is {len(poslist)}")
-    pr = calc_precision_recall(poslist, numtotal)
-    outdf['pr'] = pr
+    #logging.debug(f"outdf before pr is:\n{outdf}")
+    #outdf = calc_f1_max_overall(outdf)
+    #pos = outdf[outdf.correct == True]
+    #logging.debug(f"positives is:\n{pos}")
+    #poslist = list(pos.index.values)
+    #numtotal = len(predictdf)
+    #logging.debug(f"numtotal is {numtotal}")    
+    #logging.debug(f"len(poslist) is {len(poslist)}")
+    #pr = calc_precision_recall(poslist, numtotal)
+    #outdf['pr'] = pr
 
     # logging.debug("Summarizing info so one row per cid...")
     # outdf = outdf.groupby('cid').max()
@@ -1107,6 +1108,69 @@ def calc_f1_max(dataframe):
         i += 1
     logging.debug(f"final. i={i} numtrue={numtrue} f1max={f1max}")
     dataframe['f1max'] = f1max
+    return dataframe
+
+
+def calc_f1(dataframe):
+    """
+    F1 calculation for each goterm prediction.  
+    Dataframe assumes one cid represented. 
+        
+    nterms is total number of correct terms
+    
+    In:
+             cgid             cid  correct      goterm nterms      pest     score  ntermsum
+0       CHIA_MOUSE  G1009000000001     True  GO:0008150     85  0.990000  0.046959       764
+1       CHIA_MOUSE  G1009000000001    False  GO:0005575     85  0.442188  0.020743       764
+2       CHIA_MOUSE  G1009000000001    False  GO:0110165     85  0.423416  0.019845       764
+3       CHIA_MOUSE  G1009000000001     True  GO:0009987     85  0.387863  0.018143       764 
+    ...
+   
+    F1 at each index i is:
+            pr = num-true  / i 
+            rc = num-true / (nterms - num-true)
+            2  *   (   pr * rc / pr + rc )
+    
+    """
+    logging.debug(f"inbound frame is:\n{dataframe} length={dataframe.shape[0]}")
+    nterms = dataframe['nterms'].max()
+    logging.debug(f"annotated terms is {nterms}")
+    dataframe.sort_values(by='score', ascending=False, inplace=True)
+    dataframe.reset_index(drop=True, inplace=True)
+    logging.debug(f"frame after sorting:\n{dataframe}")    
+    
+    numtrue = 0
+    i = 1
+    #f1max = 0
+    f1= 0.0 
+    logging.debug(f"initial. i={i} numtrue={numtrue} f1={f1}")
+    #dataframe['f1'] = 0
+    f1list = []
+        
+    for row in dataframe.itertuples():
+        if row.correct == True:
+            numtrue += 1
+            logstr = "correct"
+        else:
+            logstr = " not correct"
+        try:
+            pr = (numtrue / i)
+            #logging.debug(f"pr[{i}] = {pr}")
+            rc = (numtrue / nterms )
+            #logging.debug(f"rc[{i}] = {rc}")
+            # from Cafa tool:   f = (2*pr*rc)/(pr+rc)  SAME VALUE
+            f1 = 2 * ( (pr * rc) / (pr + rc ) )
+            logging.debug(f"{row.cid}: {row.goterm} {logstr}. f1={f1}")
+        except ZeroDivisionError:
+            f1 = 0
+            logging.warning("Division by zero error during f1 calculation.")
+        f1list.append(f1)
+        #if f1 > f1max:
+        #    f1max = f1
+        i += 1
+    dataframe['f1'] = pd.Series(f1list)
+    logging.debug(f"final. i={i} numtrue={numtrue}")
+    #dataframe['f1max'] = f1max
     return dataframe
 
 
@@ -1192,6 +1256,86 @@ def get_evaluate_df(config, predictdf, goaspect=None,  threshold=None ):
     
     df = do_evaluate_auroc(config, predictdf, goaspect)
     return df
+
+
+
+def do_summarize(config, evaldf):
+    """
+    Calculate final evaluation one row per target. 
+    Input is evaluation dataframe (one row per goterm). 
+    
+    In:
+    i    cid           goterm       score    cgid
+    0    G960600000001 GO:0086041   53.0   Q9Y3Q4_HUMAN
+    1    G960600000001 GO:0086089   49.0   Q9Y3Q4_HUMAN
+    2    G960600000001 GO:0086090   49.0   Q9Y3Q4_HUMAN
+    
+    Out:
+    
+              cgid             cid      f1max   nterms   ncorrect  pr
+        CHIA_MOUSE  G1009000000001      4.3
+
+
+    """
+    #logging.debug(f"got predictdf:\n{predictdf}")
+    ubgo = get_uniprot_by_object(config, by='pid', usecache=True, goaspect=goaspect)
+    ontobj = get_ontology_object(config, usecache=True)
+    logging.debug(f"got known uniprot and ontology object.")  
+    
+    outdf = pd.DataFrame(columns = ['cid','goterm','score','cgid', 'correct', 'nterms'])
+
+    cidlist = list(predictdf.cid.unique())
+    logging.debug(f"cid list: {cidlist}")
+
+    ntermsum = 0
+    for cid in cidlist:
+        cdf = predictdf[predictdf.cid == cid].copy()
+
+        # get gene id. 
+        cgid = cdf.cgid.unique()[0]
+        logging.debug(f"cgid is {cgid}")
+        #ubp = get_uniprot_bypid_object(config, usecache=True)
+        ubp = ubgo
+        try:
+            nterms = ubp[cgid].sum()
+            if nterms > 0:
+                ntermsum = ntermsum + nterms
+                #logging.debug(f"there are {nterms} goterms associated with {cgid}")
+                #logging.debug(f"geneid for this target is is {cgid}")
+                cdf['correct'] = cdf.apply(is_correct_apply, axis=1)
+                cdf['nterms'] = nterms
+                #cdf.reset_index(drop=True, inplace=True) 
+                logging.debug(f"cdf after assessment:\n{cdf.dtypes}\n{cdf}")
+                #logging.debug(f"cdf is:\n{cdf}")
+                #logging.debug(f"appending: outdf.columns={outdf.columns} cdf.columns={cdf.columns}")
+                #cdf = calc_f1_max(cdf)
+                cdf = calc_f1(cdf)
+                logging.debug(f"cid {cid}:\n{cdf}")
+                outdf = outdf.append(cdf, ignore_index=True)
+            else:
+                logging.warning(f"nterms=0 ignoring.??")
+        except KeyError:
+            logging.warning(f"No entry found for {cgid}...")    
+        
+    #outdf['correct'] = outdf['correct'].astype(np.bool)
+    #outdf['ntermsum'] = ntermsum
+    #logging.debug(f"outdf before pr is:\n{outdf}")
+    #outdf = calc_f1_max_overall(outdf)
+    #pos = outdf[outdf.correct == True]
+    #logging.debug(f"positives is:\n{pos}")
+    #poslist = list(pos.index.values)
+    #numtotal = len(predictdf)
+    #logging.debug(f"numtotal is {numtotal}")    
+    #logging.debug(f"len(poslist) is {len(poslist)}")
+    #pr = calc_precision_recall(poslist, numtotal)
+    #outdf['pr'] = pr
+
+    # logging.debug("Summarizing info so one row per cid...")
+    # outdf = outdf.groupby('cid').max()
+    return outdf
+
+
+
 
 
 def run_phmmer(config, filename, version='current'):
