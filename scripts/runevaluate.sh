@@ -3,7 +3,7 @@
 #  Run evaluations on all predictions in testdir
 #  by aspect and all. 
 #
-INDIR=~/play/ismb/noknow
+#INDIR=~/play/ismb/noknow
 OUTDIR=~/play/ismb/evaluate
 PROG=~/data/git/cafa4/fastcafa/fastcafa.py
 CONF=~/data/git/cafa4/etc/fastcafa.conf
