@@ -995,7 +995,7 @@ def do_evaluate(config, predictdf, goaspect):
 
     """
     #logging.debug(f"got predictdf:\n{predictdf}")
-    ubgo = get_uniprot_by_object(config, by='pid', usecache=True, goaspect=goaspect)
+    ubp = get_uniprot_by_object(config, by='pid', usecache=True, goaspect=goaspect)
     ontobj = get_ontology_object(config, usecache=True)
     logging.debug(f"got known uniprot and ontology object.")  
     
@@ -1011,8 +1011,6 @@ def do_evaluate(config, predictdf, goaspect):
         # get gene id. 
         cgid = cdf.cgid.unique()[0]
         logging.debug(f"cgid is {cgid}")
-        #ubp = get_uniprot_bypid_object(config, usecache=True)
-        ubp = ubgo
         try:
             nterms = ubp[cgid].sum()
             if nterms > 0:
@@ -1034,21 +1032,7 @@ def do_evaluate(config, predictdf, goaspect):
         except KeyError:
             logging.warning(f"No entry found for {cgid}...")    
         
-    #outdf['correct'] = outdf['correct'].astype(np.bool)
-    #outdf['ntermsum'] = ntermsum
-    #logging.debug(f"outdf before pr is:\n{outdf}")
-    #outdf = calc_f1_max_overall(outdf)
-    #pos = outdf[outdf.correct == True]
-    #logging.debug(f"positives is:\n{pos}")
-    #poslist = list(pos.index.values)
-    #numtotal = len(predictdf)
-    #logging.debug(f"numtotal is {numtotal}")    
-    #logging.debug(f"len(poslist) is {len(poslist)}")
-    #pr = calc_precision_recall(poslist, numtotal)
-    #outdf['pr'] = pr
-
-    # logging.debug("Summarizing info so one row per cid...")
-    # outdf = outdf.groupby('cid').max()
+    outdf[['gene','species']] = outdf.cgid.str.split('_',expand=True)
     return outdf
 
 
@@ -1265,77 +1249,31 @@ def do_summarize(config, evaldf):
     Input is evaluation dataframe (one row per goterm). 
     
     In:
-    i    cid           goterm       score    cgid
-    0    G960600000001 GO:0086041   53.0   Q9Y3Q4_HUMAN
-    1    G960600000001 GO:0086089   49.0   Q9Y3Q4_HUMAN
-    2    G960600000001 GO:0086090   49.0   Q9Y3Q4_HUMAN
+      i, cid,           goterm,     score, cgid,       correct, nterms, method, aspect, f1
+      0, G722700000021, GO:0005575, 177.4, F172A_DROME,False,   48,     phmmer, cc,     0.0
     
     Out:
-    
-              cgid             cid      f1max   nterms   ncorrect  pr
-        CHIA_MOUSE  G1009000000001      4.3
+        cgid             cid            f1max   nterms   ncorrect  pr
+        CHIA_MOUSE  G1009000000001              4.3
 
 
     """
-    #logging.debug(f"got predictdf:\n{predictdf}")
-    ubgo = get_uniprot_by_object(config, by='pid', usecache=True, goaspect=goaspect)
-    ontobj = get_ontology_object(config, usecache=True)
-    logging.debug(f"got known uniprot and ontology object.")  
+    #outdf = pd.DataFrame(columns = ['cid','score','cgid', 'ncorrect', 'nterms', 'method','aspect','f1max'])
     
-    outdf = pd.DataFrame(columns = ['cid','goterm','score','cgid', 'correct', 'nterms'])
-
-    cidlist = list(predictdf.cid.unique())
-    logging.debug(f"cid list: {cidlist}")
-
-    ntermsum = 0
-    for cid in cidlist:
-        cdf = predictdf[predictdf.cid == cid].copy()
-
-        # get gene id. 
-        cgid = cdf.cgid.unique()[0]
-        logging.debug(f"cgid is {cgid}")
-        #ubp = get_uniprot_bypid_object(config, usecache=True)
-        ubp = ubgo
-        try:
-            nterms = ubp[cgid].sum()
-            if nterms > 0:
-                ntermsum = ntermsum + nterms
-                #logging.debug(f"there are {nterms} goterms associated with {cgid}")
-                #logging.debug(f"geneid for this target is is {cgid}")
-                cdf['correct'] = cdf.apply(is_correct_apply, axis=1)
-                cdf['nterms'] = nterms
-                #cdf.reset_index(drop=True, inplace=True) 
-                logging.debug(f"cdf after assessment:\n{cdf.dtypes}\n{cdf}")
-                #logging.debug(f"cdf is:\n{cdf}")
-                #logging.debug(f"appending: outdf.columns={outdf.columns} cdf.columns={cdf.columns}")
-                #cdf = calc_f1_max(cdf)
-                cdf = calc_f1(cdf)
-                logging.debug(f"cid {cid}:\n{cdf}")
-                outdf = outdf.append(cdf, ignore_index=True)
-            else:
-                logging.warning(f"nterms=0 ignoring.??")
-        except KeyError:
-            logging.warning(f"No entry found for {cgid}...")    
+    
+    gb = evaldf.groupby('cid')
+    
+    outdf = gb.max().reset_index()
+    droplist = ['goterm','correct','aspect','score']   
+    outdf.drop(droplist, inplace=True, axis=1)
+    
+    #outdf['ncorrect'] = evaldf.groupby('cid')['correct'].transform('sum')
         
-    #outdf['correct'] = outdf['correct'].astype(np.bool)
-    #outdf['ntermsum'] = ntermsum
-    #logging.debug(f"outdf before pr is:\n{outdf}")
-    #outdf = calc_f1_max_overall(outdf)
-    #pos = outdf[outdf.correct == True]
-    #logging.debug(f"positives is:\n{pos}")
-    #poslist = list(pos.index.values)
-    #numtotal = len(predictdf)
-    #logging.debug(f"numtotal is {numtotal}")    
-    #logging.debug(f"len(poslist) is {len(poslist)}")
-    #pr = calc_precision_recall(poslist, numtotal)
-    #outdf['pr'] = pr
-
-    # logging.debug("Summarizing info so one row per cid...")
-    # outdf = outdf.groupby('cid').max()
+    ncdf = gb.apply(lambda x: (x.correct == True).sum()).reset_index(name='ncorrect')
+    outdf['ncorrect'] = ncdf.ncorrect
+    outdf.rename(columns={'f1': 'f1max'}, inplace=True)
+    logging.debug(f"outdf:\n{outdf}") 
     return outdf
-
-
-
 
 
 def run_phmmer(config, filename, version='current'):
@@ -3273,7 +3211,7 @@ def run_tocafa(config, infile, outfile=None, modelnum=1):
     logging.info(f"Wrote cafafile with {len(topdf.index)} entries. ")
     return s
 
-def run_summarize(config, infiles, outfile, method, knowledge, aspect='all', evcode='exp'):
+def run_summarize_old(config, infile, outfile):
     """
     Consume and merge a set of eval files, assuming provided parameters with which they 
     were created. 
@@ -3341,43 +3279,30 @@ def run_summarize(config, infiles, outfile, method, knowledge, aspect='all', evc
 
     logging.debug(f"Saving figure to {outfile}.png ")
     chart.savefig(f"{outfile}.png")
-
     logging.debug(f"writing merged eval to {outfile}")
     topdf.to_csv(outfile)
 
 
 
-def run_summarize_simple(config, infiles, outfile):
-    logging.info(f'handling infiles= {infiles}')
-    f1maxes = []
-    for infile in infiles:
-        basename = os.path.basename(infile)
-        # print(f"{infile}")
-        try:
-            df = pd.read_csv(infile, index_col=0, comment="#")
-            totaltrue = len(df[df.correct == True])
-            totalnum = df.shape[0]
-            if totalnum != 0: 
-                accuracy = totaltrue / totalnum
-                numcids = len(df.cid.unique() )
-                f1max = df.groupby('cid')['f1max'].max().mean()  
-                f1maxes.append(f1max)
-                    
-                print(f"num cafaids: {numcids}")
-                print(f"{basename}\tf1max: {f1max}")
-                print(f"accuracy: {accuracy}")
-            else:
-                print(f"{basename}\tf1max: NA")
-        except FileNotFoundError:
-            print(f"no such file {infile}")
-    
-    ar = np.array(f1maxes)
-    meanf1max = np.mean(ar)
-    
-    print(f">meanf1max(allfiles):\t\t{meanf1max}")    
-    
-    
+def run_summarize(config, infile, outfile):
+    '''
+    Consume one-row-per-goterm file and produce a one-row-per-target output, calculating f1max.
+    Other per-protein statistics? 
 
+    '''
+    logging.info(f'handling infile: {infile}')
+    f1maxes = []
+    try:
+        evaldf = pd.read_csv(infile, index_col=0, comment="#")
+        logging.debug("Running do_summarize()")
+        outdf = do_summarize(config, evaldf )
+        logging.debug(f"writing summarize DF to {outfile}")
+        outdf.to_csv(outfile)
+        logging.debug("done.")
+        
+    except FileNotFoundError:
+        print(f"no such file {infile}")
+    
 
 ################################ utility functions ###################################
 
@@ -3669,6 +3594,7 @@ if __name__ == '__main__':
                                default=None,
                                help='Limit prediction to goaspect [bp|mf|cc|all]' )
 
+
     parser_builduniprot_test = subparsers.add_parser('build_uniprot_test',
                                           help='build and cache uniprot test source info')
 
@@ -3778,15 +3704,15 @@ if __name__ == '__main__':
                                help='Numeric label for this method/model.')
 
 ######################### summarize  ####################################    
+    
         
     parser_summarize = subparsers.add_parser('summarize',
-                                          help='create summary statistics from eval files.  ')
+                                          help='create target summary from goterm eval. one row per target.  ')
     
-    parser_summarize.add_argument('infiles', 
-                               metavar='infiles', 
-                               type=str,
-                               nargs='+', 
-                               help='.csv evaluation file[s]')        
+    parser_summarize.add_argument('-i', '--infile', 
+                               metavar='infile', 
+                               type=str, 
+                               help='a .csv prediction file')          
           
     parser_summarize.add_argument('-o', '--outfile', 
                                metavar='outfile', 
@@ -3794,32 +3720,8 @@ if __name__ == '__main__':
                                default=None,
                                help='a .csv output file for submission.') 
 
-    parser_summarize.add_argument('-m', '--method', 
-                               metavar='method', 
-                               type=str, 
-                               default=None,
-                               help='method used for predictions')
-
-    parser_summarize.add_argument('-a', '--aspect', 
-                               metavar='aspect', 
-                               type=str, 
-                               default='all',
-                               help='aspect used for predictions')
-
-    parser_summarize.add_argument('-k', '--knowledge', 
-                               metavar='knowledge', 
-                               type=str, 
-                               default='noknow',
-                               help='knowledge used for predictions')
-
-    parser_summarize.add_argument('-e', '--evcode', 
-                               metavar='evcode', 
-                               type=str, 
-                               default='exp',
-                               help='evidence codes used for term transfer')
 
 
-##############################################################################
 ##############################################################################
 
     args= parser.parse_args()
@@ -3913,17 +3815,9 @@ if __name__ == '__main__':
             args.goaspect = None
         run_evaluate(cp, args.infile, args.outfile, args.goaspect)
 
-    ################## aggregate, summarize and generate figures  #######################
-
     if args.subcommand == 'summarize':
-        run_summarize(cp, 
-                      args.infiles,   #  list of infiles
-                      args.outfile,   #  plot is <outfile>.png 
-                      args.method,    #  phmmer, prior, expression, orthoexpression 
-                      args.knowledge, #  noknow, limited
-                      args.aspect,    #  all,bp,mf,cc
-                      args.evcode,    #  exp, iea (transferred?) 
-                      )
+        run_summarize(cp, args.infile, args.outfile)
+
 
     ################## generate submission file  #######################
     

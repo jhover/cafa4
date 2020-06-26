@@ -3,8 +3,8 @@
 #  Run evaluations on all predictions in testdir
 #  by aspect and all. 
 #
-INDIR=~/play/ismb/predict
-OUTDIR=~/play/ismb/evaluate
+INDIR=~/play/ismb/evaluate
+OUTDIR=~/play/ismb/summarize
 PROG=~/data/git/cafa4/fastcafa/fastcafa.py
 CONF=~/data/git/cafa4/etc/fastcafa.conf
 
@@ -31,22 +31,22 @@ for KNOW in $KNOWLEDGE; do
 		for ASPECT in $ASPECTS; do
 			echo "Handling aspect $ASPECT..." 
 		
-			for FILE in `ls $INDIR/*.$KNOW.*.$METHOD.$ASPECT.csv`; do 
+			for FILE in `ls $INDIR/*.$KNOW.*.$METHOD.$ASPECT.eval.csv`; do 
 				echo "Handling $FILE..."
 				echo "###############################################"
 				FILENAME=`basename $FILE`
 				EXTENSION="${FILENAME##*.}"
 				FILEBASE="${FILENAME%.*}"
-				OUTFILE=$OUTBASE/$FILEBASE.eval.csv
+				OUTFILE=$OUTBASE/$FILEBASE.summ.csv
 				echo "FILE=$FILE"
 				echo "EXTENSION=$EXTENSION"
 				echo "FILEBASE=$FILEBASE"
 				echo "OUTBASE=$OUTBASE"
 				echo "OUT=$OUTFILE"
 				if [ ! -f $OUTFILE ]; then
-					echo "time $PROG -C $DEBUG -c $CONF evaluate -g $ASPECT -i $FILE -o $OUTFILE "
+					echo "time $PROG -C $DEBUG -c $CONF summarize  -i $FILE -o $OUTFILE "
 					echo ""
-					time $PROG -C $DEBUG -c $CONF evaluate -g $ASPECT -i $FILE -o $OUTFILE
+					time $PROG -C $DEBUG -c $CONF summarize -i $FILE -o $OUTFILE
 				else
 					echo "Output exists. Skipping..."				
 				fi
