@@ -1264,7 +1264,7 @@ def do_summarize(config, evaldf):
     gb = evaldf.groupby('cid')
     
     outdf = gb.max().reset_index()
-    droplist = ['goterm','correct','aspect','score']   
+    droplist = ['goterm','correct','score']   
     outdf.drop(droplist, inplace=True, axis=1)
     
     #outdf['ncorrect'] = evaldf.groupby('cid')['correct'].transform('sum')
