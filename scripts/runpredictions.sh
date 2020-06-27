@@ -9,7 +9,7 @@
 
 
 TESTDIR=~/play/ismb/testtargets/2010-2019
-OUTDIR=~/play/ismb/
+OUTDIR=~/play/ismb/predict
 PROG=~/data/git/cafa4/fastcafa/fastcafa.py
 CONF=~/data/git/cafa4/etc/fastcafa.conf
 #METHODS="prior phmmer expression orthoexpression"
