@@ -4,6 +4,10 @@
 #  Use general + all aspects individually.   
 #  Output .csv predictions. 
 #
+# SPECIES="BOVIN DICDI ECOLI"
+#SPECIES="DICDI"
+
+
 TESTDIR=~/play/ismb/testtargets/2010-2019
 OUTDIR=~/play/ismb/
 PROG=~/data/git/cafa4/fastcafa/fastcafa.py
@@ -11,6 +15,7 @@ CONF=~/data/git/cafa4/etc/fastcafa.conf
 #METHODS="prior phmmer expression orthoexpression"
 METHODS="prior phmmer expression orthoexpression"
 ASPECTS="bp cc mf all"
+
 #DEBUG=" -d "
 DEBUG=" "
 VERSION="2010"
@@ -18,7 +23,7 @@ VFLAG=" -V $VERSION "
 
 mkdir -p $OUTDIR
 echo "Running on all targets..."
-for TFA in `ls $TESTDIR/*.tfa`; do
+for TFA in `ls $TESTDIR/*.${SPECIES}.*.tfa`; do
 	echo "Handling $TFA..."
 	echo "###############################################"
 	FILENAME=`basename $TFA`
