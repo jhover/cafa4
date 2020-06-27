@@ -3,14 +3,14 @@
 #  Run evaluations on all predictions in testdir
 #  by aspect and all. 
 #
-INDIR=~/play/ismb/predict
+#INDIR=~/play/ismb/predict
 OUTDIR=~/play/ismb/evaluate
 PROG=~/data/git/cafa4/fastcafa/fastcafa.py
 CONF=~/data/git/cafa4/etc/fastcafa.conf
 
 KNOWLEDGE="noknow"
 METHODS="expression phmmer orthoexpression prior"
-ASPECTS="bp mf cc all"
+ASPECTS="all"
 
 #VERSION="2010"
 VFLAG=" -V $VERSION "
@@ -22,7 +22,7 @@ echo "Running on all targets..."
 
 for KNOW in $KNOWLEDGE; do
 	echo "Handling knowledge $KNOW..."
-	OUTBASE=$OUTDIR/$KNOW
+	OUTBASE=$OUTDIR
 	echo "Making outdir $OUTBASE..."
 	mkdir -p $OUTBASE
 	for METHOD in $METHODS; do 
