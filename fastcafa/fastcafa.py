@@ -547,7 +547,7 @@ def do_expression(config, infile, outfile, usecache=True, version='2019',goasp=N
     """
     logging.info(f"Doing expression on file {infile}...")
     idmaps = get_idmaps(config, usecache=usecache, version=version)
-    p2a= idmaps['pid2pacc']
+    p2a = idmaps['pid2pacc']
     
     infile = os.path.expanduser(infile)
     if os.path.exists(infile):
@@ -560,7 +560,7 @@ def do_expression(config, infile, outfile, usecache=True, version='2019',goasp=N
 
         df = calc_expression_prediction(config, indf, usecache, version)
         logging.debug(f"prediction=\n{df}")
-        if len(df) > 0:
+        if df is not None:
             logging.debug(f"Adjusting prediction limit to {goasp}")
             df = filter_goaspect(config, df, goasp)            
             if df is not None:
