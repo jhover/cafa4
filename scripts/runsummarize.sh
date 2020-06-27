@@ -22,7 +22,7 @@ echo "Running on all targets..."
 
 for KNOW in $KNOWLEDGE; do
 	echo "Handling knowledge $KNOW..."
-	OUTBASE=$OUTDIR/$KNOW
+	OUTBASE=$OUTDIR
 	echo "Making outdir $OUTBASE..."
 	mkdir -p $OUTBASE
 	for METHOD in $METHODS; do 
