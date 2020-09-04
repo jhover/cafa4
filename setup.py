@@ -26,7 +26,7 @@ current_time = time.gmtime()
 release_version='0.9.9'
 
 scripts   = []
-etc_files = []
+etc_files = ['etc/fastcafa.conf']
 
 rpm_data_files  = []
 home_data_files = []

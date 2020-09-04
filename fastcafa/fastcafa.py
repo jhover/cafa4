@@ -477,6 +477,67 @@ NOTES:  NaN expected for gene, omit...
     logging.debug(f"Made dict by {by}: {[ (k, byxdict[k]) for k in samplekeys]} ")
     return byxdict
 
+def build_goa_gomatrix(config, usecache=False, version='2019'):
+    logging.debug(f"Building goa gomatrix. ")
+    ontobj = get_ontology_object(config, usecache=True)
+    
+    parse_goa_gaf(config)
+
+
+
+def parse_goa_gaf(config):
+    '''
+    create list of lists of GOA database. 
+    
+    
+    '''
+    filepath = os.path.expanduser(config.get('goa','datafile'))
+    try:
+       logging.debug(f" attempting to open '{filepath}'")
+       filehandle = open(filepath, 'r')
+    except FileNotFoundError:
+        logging.error(f"No such file {filepath}")                
+    
+    allentries = []
+    current = None
+    sumreport = 1
+    suminterval = 10000
+    repthresh = sumreport * suminterval
+    
+    try:
+        while True:
+            line = filehandle.readline()
+            if line == '':
+                break
+
+            if line.startswith("!"):
+                pass
+
+            else:
+                fields = line.split('\t')
+                fields = fields[:7]
+                logging.debug(f"fields = {fields}")
+                #logging.debug("End of entry.")                  
+                #allentries.append(current)
+                #logging.debug(f"All entries list now {len(allentries)} items... ")
+                #if len(allentries) >= repthresh:
+                #    logging.info(f"Processed {len(allentries)} entries... ")
+                #    sumreport +=1
+                #    repthresh = sumreport * suminterval
+                #current = None    
+
+    
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)                
+    
+    if filehandle is not None:
+        filehandle.close()      
+    
+    logging.info(f"Parsed file with {len(allentries)} entries" )
+    logging.debug(f"Some entries:  {allentries[1000:1005]}")
+    return allentries
+    
+    
 
 def do_build_prior(config, usecache=True ):    
 
@@ -3544,6 +3605,19 @@ if __name__ == '__main__':
                                default='2019',
                                help='version of uniprot to use.')
 
+######################### build and cache goa gomatrix ####################################
+
+    parser_buildgoa_gomatrix = subparsers.add_parser('build_goa_gomatrix',
+                                          help='build and cache GO ontology')    
+
+    parser_buildgoa_gomatrix.add_argument('-V','--version', 
+                               metavar='version', 
+                               type=str, 
+                               default='2019',
+                               help='version of GOA to use.')
+
+
+
 
 ######################### build and cache prior info ####################################
     
@@ -3746,6 +3820,9 @@ if __name__ == '__main__':
 
     if args.subcommand == 'build_uniprot':
         build_uniprot(cp, usecache=False, version=args.version)
+
+    if args.subcommand == 'build_goa_gomatrix':
+        build_goa_gomatrix(cp, usecache=False, version=args.version)
 
     if args.subcommand == 'build_species':
         build_specmaps(cp,  usecache=False)
