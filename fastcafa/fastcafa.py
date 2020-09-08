@@ -485,8 +485,8 @@ def build_goa_gomatrix(config, usecache=False, version='2019', outfile=None):
     logging.debug(f"Building matrix...")
     genebygo = build_genematrix(lol, ontobj)
     logging.debug(f"Done. genebygo: t{type(genebygo)} shape {genebygo.shape} dtype {genebygo.dtype} ")
-    logging.debug("converting to sparse matrix.")
-    genebygo = sparse.lil_matrix(genebygo, dtype=bool)
+    #logging.debug("converting to sparse matrix.")
+    #genebygo = sparse.lil_matrix(genebygo, dtype=bool)
     logging.debug(f"Done. genebygo: t{type(genebygo)} shape {genebygo.shape} dtype {genebygo.dtype} ")
     if outfile is not None:
         logging.debug(f"Saving matrix to {outfile}")
@@ -508,31 +508,37 @@ def build_genematrix(goadata, ontobj):
     logging.debug("In build_genematrix...")
     gotermlist = ontobj.gotermlist  # columnlabels
     genelist = []   # rowlabels
-    govectors = []  # data
+    #govectors = []  # data
+    #govectors = sparse.lil_matrix( (0,47417),'bool')
+    govectors = None
+    
     
     currentg = None
     currentv = None
     for e in goadata:
         (gene, goterm ) = e
-        govect = ontobj[goterm]
-
+        govect = sparse.lil_matrix( ontobj[goterm])
         if gene == currentg:
-            logging.debug(f"gene: {gene} == currentgene: {currentg} ")
+            #logging.debug(f"gene: {gene} == currentgene: {currentg} ")
             currentv = currentv + govect
             
         else:
-            logging.debug(f"gene: {gene} != currentgene: {currentg} ")
+            #logging.debug(f"gene: {gene} != currentgene: {currentg} ")
             genelist.append(gene)
-            govectors.append(govect)
+            if govectors is None:
+                govectors = govect
+            else:
+                #govectors.append(govect)
+                govectors = np.vstack( ( govectors, govect ) )
             currentg = gene
             currentv = govect
     logging.debug(f"genelist= {genelist}")
     logging.debug(f"collected {len(govectors)} govectors. {len(genelist)} genes.")
     logging.debug("Done building structures. Creating matrix.")
     
-    m = np.array(govectors)
+    #m = np.array(govectors)
     
-    return m         
+    return govectors
     
     
 
