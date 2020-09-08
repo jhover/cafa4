@@ -105,7 +105,7 @@ class Ontology(dict):
         # a dictionary of (alternate) goterms -> (real) goterms
         self.altidx = altidx
         # list of go terms
-        # **depends on key sort order stablility**
+        # **depends on key sort order stability**
         self.gotermlist = list(gotermidx)
         
         
@@ -477,19 +477,71 @@ NOTES:  NaN expected for gene, omit...
     logging.debug(f"Made dict by {by}: {[ (k, byxdict[k]) for k in samplekeys]} ")
     return byxdict
 
-def build_goa_gomatrix(config, usecache=False, version='2019'):
-    logging.debug(f"Building goa gomatrix. ")
+def build_goa_gomatrix(config, usecache=False, version='2019', outfile=None):
+    logging.debug(f"Getting GO ontology object... ")
     ontobj = get_ontology_object(config, usecache=True)
+    logging.debug(f"Parsing GOA file...")
+    lol = parse_goa_gaf(config)
+    logging.debug(f"Building matrix...")
+    genebygo = build_genematrix(lol, ontobj)
+    logging.debug(f"Done. genebygo: t{type(genebygo)} shape {genebygo.shape} dtype {genebygo.dtype} ")
+    logging.debug("converting to sparse matrix.")
+    genebygo = sparse.lil_matrix(genebygo, dtype=bool)
+    logging.debug(f"Done. genebygo: t{type(genebygo)} shape {genebygo.shape} dtype {genebygo.dtype} ")
+    if outfile is not None:
+        logging.debug(f"Saving matrix to {outfile}")
+        np.save(outfile, genebygo)
+
+
+def build_genematrix(goadata, ontobj):
+    '''
+    Takes goadata [ [ <gene>, <goterm> ], [ <gene>, <goterm> ] ...]
+    produces boolean matrix of genes by goterm vector. 
     
-    parse_goa_gaf(config)
+        47k
+    
+    G1    <vector>
+    G2    <vector>
+    G3
+    
+    '''
+    logging.debug("In build_genematrix...")
+    gotermlist = ontobj.gotermlist  # columnlabels
+    genelist = []   # rowlabels
+    govectors = []  # data
+    
+    currentg = None
+    currentv = None
+    for e in goadata:
+        (gene, goterm ) = e
+        govect = ontobj[goterm]
+
+        if gene == currentg:
+            logging.debug(f"gene: {gene} == currentgene: {currentg} ")
+            currentv = currentv + govect
+            
+        else:
+            logging.debug(f"gene: {gene} != currentgene: {currentg} ")
+            genelist.append(gene)
+            govectors.append(govect)
+            currentg = gene
+            currentv = govect
+    logging.debug(f"genelist= {genelist}")
+    logging.debug(f"collected {len(govectors)} govectors. {len(genelist)} genes.")
+    logging.debug("Done building structures. Creating matrix.")
+    
+    m = np.array(govectors)
+    
+    return m         
+    
+    
 
 
 
 def parse_goa_gaf(config):
     '''
     create list of lists of GOA database. 
-    
-    
+    [ <gene>, <goterm> ]
     '''
     filepath = os.path.expanduser(config.get('goa','datafile'))
     try:
@@ -516,17 +568,9 @@ def parse_goa_gaf(config):
             else:
                 fields = line.split('\t')
                 fields = fields[:7]
-                logging.debug(f"fields = {fields}")
-                #logging.debug("End of entry.")                  
-                #allentries.append(current)
-                #logging.debug(f"All entries list now {len(allentries)} items... ")
-                #if len(allentries) >= repthresh:
-                #    logging.info(f"Processed {len(allentries)} entries... ")
-                #    sumreport +=1
-                #    repthresh = sumreport * suminterval
-                #current = None    
+                geneterm = [ fields[2], fields[4] ]
+                allentries.append(geneterm)
 
-    
     except Exception as e:
         traceback.print_exc(file=sys.stdout)                
     
@@ -536,8 +580,7 @@ def parse_goa_gaf(config):
     logging.info(f"Parsed file with {len(allentries)} entries" )
     logging.debug(f"Some entries:  {allentries[1000:1005]}")
     return allentries
-    
-    
+        
 
 def do_build_prior(config, usecache=True ):    
 
@@ -3616,7 +3659,13 @@ if __name__ == '__main__':
                                default='2019',
                                help='version of GOA to use.')
 
-
+    parser_buildgoa_gomatrix.add_argument('-o', '--out',  
+                               metavar='outfile',
+                               dest='outfile',
+                               required=False,
+                               default=None, 
+                               type=str, 
+                               help='a govector matrix file?')
 
 
 ######################### build and cache prior info ####################################
@@ -3821,9 +3870,6 @@ if __name__ == '__main__':
     if args.subcommand == 'build_uniprot':
         build_uniprot(cp, usecache=False, version=args.version)
 
-    if args.subcommand == 'build_goa_gomatrix':
-        build_goa_gomatrix(cp, usecache=False, version=args.version)
-
     if args.subcommand == 'build_species':
         build_specmaps(cp,  usecache=False)
 
@@ -3832,6 +3878,9 @@ if __name__ == '__main__':
 
     if args.subcommand == 'build_uniprot_test':
         build_uniprot_test(cp, usecache=False )
+
+    if args.subcommand == 'build_goa_gomatrix':
+        build_goa_gomatrix(cp, usecache=False, version=args.version, outfile=args.outfile)
 
     ################## generate prediction file #######################
     
