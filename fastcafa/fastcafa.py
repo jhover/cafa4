@@ -477,20 +477,64 @@ NOTES:  NaN expected for gene, omit...
     logging.debug(f"Made dict by {by}: {[ (k, byxdict[k]) for k in samplekeys]} ")
     return byxdict
 
-def build_goa_gomatrix(config, usecache=False, version='2019', outfile=None):
+def build_goa_gomatrix(config, usecache=False, version='2019', infile=None, outfile=None):
     logging.debug(f"Getting GO ontology object... ")
     ontobj = get_ontology_object(config, usecache=True)
     logging.debug(f"Parsing GOA file...")
-    lol = parse_goa_gaf(config)
+    lol = parse_goa_gaf(config, infile)
     logging.debug(f"Building matrix...")
-    genebygo = build_genematrix(lol, ontobj)
+    genebygo, genelist = build_genematrix(lol, ontobj)
     logging.debug(f"Done. genebygo: t{type(genebygo)} shape {genebygo.shape} dtype {genebygo.dtype} ")
     #logging.debug("converting to sparse matrix.")
     #genebygo = sparse.lil_matrix(genebygo, dtype=bool)
+    
     logging.debug(f"Done. genebygo: t{type(genebygo)} shape {genebygo.shape} dtype {genebygo.dtype} ")
-    if outfile is not None:
+    if outfile.endswith(".npy"):
         logging.debug(f"Saving matrix to {outfile}")
         np.save(outfile, genebygo)
+    
+        # columnlabels
+        golistfile = f"{outfile}.columns"
+        gof = open(golistfile, 'w')
+        for i in ontobj.gotermlist:
+            gof.write(f"{i}\n")
+        gof.close()
+        
+        #rowlabels
+        genelistfile =  f"{outfile}.rows"
+        genef = open(genelistfile, 'w')
+        for i in genelist:
+            genef.write(f"{i}\n")
+        genef.close()
+    
+    elif outfile.endswith(".txt"):
+        logging.debug(f"Saving matrix to {outfile}")
+        # fmt='%.18e', delimiter=' ', newline='n', header='', footer='', comments='# ', encoding=None)
+        np.savetxt(outfile, genebygo, fmt="%2i")
+
+        # columnlabels
+        golistfile = f"{outfile}.cols"
+        gof = open(golistfile, 'w')
+        for i in ontobj.gotermlist:
+            gof.write(f"{i}\n")
+        gof.close()
+        
+        #rowlabels
+        genelistfile =  f"{outfile}.rows"
+        genef = open(genelistfile, 'w')
+        for i in genelist:
+            genef.write(f"{i}\n")
+        genef.close()
+
+    elif outfile.endswith(".csv"):
+        logging.debug(f"Saving matrix to {outfile}")
+        genebygo = genebygo.astype(int)        
+        df = pd.DataFrame(genebygo, index=genelist, columns=ontobj.gotermlist)
+        df.to_csv(outfile, index=True, header=True, sep=' ')
+            
+    logging.debug("Done.")       
+    
+    
 
 
 def build_genematrix(goadata, ontobj):
@@ -508,74 +552,87 @@ def build_genematrix(goadata, ontobj):
     logging.debug("In build_genematrix...")
     gotermlist = ontobj.gotermlist  # columnlabels
     genelist = []   # rowlabels
-    #govectors = []  # data
-    #govectors = sparse.lil_matrix( (0,47417),'bool')
-    govectors = None
-    
+    govectors = []  # data
+    # govectors = sparse.lil_matrix( (0,47417),'bool')
+    # govectors = []
     
     currentg = None
     currentv = None
+    
     for e in goadata:
         (gene, goterm ) = e
-        govect = sparse.lil_matrix( ontobj[goterm])
-        if gene == currentg:
-            #logging.debug(f"gene: {gene} == currentgene: {currentg} ")
+        #govect = sparse.lil_matrix( ontobj[goterm])
+        govect = ontobj[goterm]
+        
+        if currentg is None:
+            logging.debug(f"First entry. gene is {gene} govect is {govect}")
+            currentv = govect
+            currentg = gene
+            
+        elif gene == currentg:
             currentv = currentv + govect
             
         else:
             #logging.debug(f"gene: {gene} != currentgene: {currentg} ")
             genelist.append(gene)
-            if govectors is None:
-                govectors = govect
-            else:
-                #govectors.append(govect)
-                govectors = np.vstack( ( govectors, govect ) )
+            #if govectors is None:
+            #    govectors = govect
+            
+            #else:
+            #    govectors.append(govect)
+                #govectors = np.vstack( ( govectors, govect ) )
+            govectors.append(currentv)
             currentg = gene
             currentv = govect
-    logging.debug(f"genelist= {genelist}")
+    #logging.debug(f"genelist= {genelist}")
     logging.debug(f"collected {len(govectors)} govectors. {len(genelist)} genes.")
     logging.debug("Done building structures. Creating matrix.")
     
+    logging.debug(f"govectors[0] = {govectors[0]}")
+    
     #m = np.array(govectors)
-    
-    return govectors
-    
+    m = np.vstack(govectors )
+    #return govectors
+    return m, genelist
     
 
 
 
-def parse_goa_gaf(config):
+def parse_goa_gaf(config, infile=None):
     '''
     create list of lists of GOA database. 
     [ <gene>, <goterm> ]
     '''
-    filepath = os.path.expanduser(config.get('goa','datafile'))
-    try:
-       logging.debug(f" attempting to open '{filepath}'")
-       filehandle = open(filepath, 'r')
-    except FileNotFoundError:
-        logging.error(f"No such file {filepath}")                
-    
-    allentries = []
-    current = None
-    sumreport = 1
-    suminterval = 10000
-    repthresh = sumreport * suminterval
+    if infile is not None:
+        filepath = infile
+    else:
+        filepath = os.path.expanduser(config.get('goa','datafile'))
     
     try:
+        logging.debug(f" attempting to open '{filepath}'")
+        filehandle = open(filepath, 'r')
+        allentries = []
+        current = None
+        sumreport = 1
+        suminterval = 10000
+        repthresh = sumreport * suminterval
+        
         while True:
             line = filehandle.readline()
             if line == '':
                 break
-
+    
             if line.startswith("!"):
                 pass
-
+    
             else:
                 fields = line.split('\t')
                 fields = fields[:7]
                 geneterm = [ fields[2], fields[4] ]
                 allentries.append(geneterm)
+
+    except FileNotFoundError:
+        logging.error(f"No such file {filepath}")   
 
     except Exception as e:
         traceback.print_exc(file=sys.stdout)                
@@ -2221,7 +2278,7 @@ def build_ontology(config, usecache):
         #sparsity = 1.0 - np.count_nonzero(gomatrix) / gomatrix.size
         #logging.debug(f"sparsity = { 1.0 - np.count_nonzero(gomatrix) / gomatrix.size }")        
         gomatrix = gomatrix.todense()
-        gomatrix = np.asarray(gomatrix)
+        gomatrix = np.asarray(gomatrix, dtype='bool')
             
         logging.debug(f"Caching all values/indexes...")
         logging.debug(f"Saving matrix: {matrix_info(gomatrix)} to {ontologyfile}")
@@ -3664,8 +3721,13 @@ if __name__ == '__main__':
                                type=str, 
                                default='2019',
                                help='version of GOA to use.')
+    
+    parser_buildgoa_gomatrix.add_argument('-i', '--infile', 
+                               metavar='infile', 
+                               type=str, 
+                               help='a .gaf GOA file')        
 
-    parser_buildgoa_gomatrix.add_argument('-o', '--out',  
+    parser_buildgoa_gomatrix.add_argument('-o', '--outfile',  
                                metavar='outfile',
                                dest='outfile',
                                required=False,
@@ -3886,7 +3948,7 @@ if __name__ == '__main__':
         build_uniprot_test(cp, usecache=False )
 
     if args.subcommand == 'build_goa_gomatrix':
-        build_goa_gomatrix(cp, usecache=False, version=args.version, outfile=args.outfile)
+        build_goa_gomatrix(cp, usecache=False, version=args.version, infile=args.infile, outfile=args.outfile)
 
     ################## generate prediction file #######################
     
