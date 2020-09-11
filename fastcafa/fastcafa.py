@@ -530,7 +530,8 @@ def build_goa_gomatrix(config, usecache=False, version='2019', infile=None, outf
         logging.debug(f"Saving matrix to {outfile}")
         genebygo = genebygo.astype(int)        
         df = pd.DataFrame(genebygo, index=genelist, columns=ontobj.gotermlist)
-        df.to_csv(outfile, index=True, header=True, sep=' ')
+        logging.debug(f"")
+        df.to_csv(outfile, index=True, header=True, sep='\t')
             
     logging.debug("Done.")       
     
