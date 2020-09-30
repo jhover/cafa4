@@ -477,11 +477,13 @@ NOTES:  NaN expected for gene, omit...
     logging.debug(f"Made dict by {by}: {[ (k, byxdict[k]) for k in samplekeys]} ")
     return byxdict
 
-def build_goa_gomatrix(config, usecache=False, version='2019', infile=None, outfile=None):
+def build_goa_gomatrix_old(config, usecache=False, version='2019', infile=None, outfile=None):
     logging.debug(f"Getting GO ontology object... ")
     ontobj = get_ontology_object(config, usecache=True)
-    logging.debug(f"Parsing GOA file...")
+    logging.debug("Parsing GOA file...")
     lol = parse_goa_gaf(config, infile)
+    logging.debug(f"List of lists: {len(lol)}")
+    
     logging.debug(f"Building matrix...")
     genebygo, genelist = build_genematrix(lol, ontobj)
     logging.debug(f"Done. genebygo: t{type(genebygo)} shape {genebygo.shape} dtype {genebygo.dtype} ")
@@ -489,44 +491,16 @@ def build_goa_gomatrix(config, usecache=False, version='2019', infile=None, outf
     #genebygo = sparse.lil_matrix(genebygo, dtype=bool)
     
     logging.debug(f"Done. genebygo: t{type(genebygo)} shape {genebygo.shape} dtype {genebygo.dtype} ")
-    if outfile.endswith(".npy"):
+  
+    if outfile.endswith(".csv"):
         logging.debug(f"Saving matrix to {outfile}")
-        np.save(outfile, genebygo)
-    
-        # columnlabels
-        golistfile = f"{outfile}.columns"
-        gof = open(golistfile, 'w')
-        for i in ontobj.gotermlist:
-            gof.write(f"{i}\n")
-        gof.close()
-        
-        #rowlabels
-        genelistfile =  f"{outfile}.rows"
-        genef = open(genelistfile, 'w')
-        for i in genelist:
-            genef.write(f"{i}\n")
-        genef.close()
-    
-    elif outfile.endswith(".txt"):
-        logging.debug(f"Saving matrix to {outfile}")
-        # fmt='%.18e', delimiter=' ', newline='n', header='', footer='', comments='# ', encoding=None)
-        np.savetxt(outfile, genebygo, fmt="%2i")
+        genebygo = genebygo.astype(int)        
+        df = pd.DataFrame(genebygo, index=genelist, columns=ontobj.gotermlist)
+        logging.debug(f"")
+        df.to_csv(outfile, index=True, header=True, sep=',')
 
-        # columnlabels
-        golistfile = f"{outfile}.cols"
-        gof = open(golistfile, 'w')
-        for i in ontobj.gotermlist:
-            gof.write(f"{i}\n")
-        gof.close()
-        
-        #rowlabels
-        genelistfile =  f"{outfile}.rows"
-        genef = open(genelistfile, 'w')
-        for i in genelist:
-            genef.write(f"{i}\n")
-        genef.close()
 
-    elif outfile.endswith(".csv"):
+    elif outfile.endswith(".tsv"):
         logging.debug(f"Saving matrix to {outfile}")
         genebygo = genebygo.astype(int)        
         df = pd.DataFrame(genebygo, index=genelist, columns=ontobj.gotermlist)
@@ -534,11 +508,10 @@ def build_goa_gomatrix(config, usecache=False, version='2019', infile=None, outf
         df.to_csv(outfile, index=True, header=True, sep='\t')
             
     logging.debug("Done.")       
-    
+    return df
     
 
-
-def build_genematrix(goadata, ontobj):
+def build_genematrix_old(goadata, ontobj):
     '''
     Takes goadata [ [ <gene>, <goterm> ], [ <gene>, <goterm> ] ...]
     produces boolean matrix of genes by goterm vector. 
@@ -595,9 +568,53 @@ def build_genematrix(goadata, ontobj):
     m = np.vstack(govectors )
     #return govectors
     return m, genelist
+
+def build_genematrix(goadata, ontobj):
+    '''
+    Takes goadata [ [ <gene>, <goterm> ], [ <gene>, <goterm> ] ...]
+    produces boolean matrix of genes by goterm vector. 
     
+          47k
+    G1    <vector>
+    G2    <vector>
+    G3
+    
+    '''
+    logging.debug("In build_genematrix...")
+    gotermlist = ontobj.gotermlist  # columnlabels
+    govectors = {}  # genename -> govector
+    # govectors = sparse.lil_matrix( (0,47417),'bool')
+   
+    for e in goadata:
+        (gene, goterm ) = e
+        #govect = sparse.lil_matrix( ontobj[goterm])
+        govect = ontobj[goterm]
+        
+        try:
+            gv = govectors[gene]
+            govectors[gene] = gv + govect
+            
+        except KeyError:
+            govectors[gene] = govect
 
+    veclist = []  
+    genelist = []   # rowlabels    
 
+    for k in govectors.keys():
+        veclist.append(govectors[k])
+        genelist.append(k)
+
+    #logging.debug(f"genelist= {genelist}")
+    logging.debug(f"collected {len(govectors)} govectors. {len(genelist)} genes.")
+    logging.debug("Done building structures. Creating matrix.")
+    
+    #logging.debug(f"govectors[0] = {govectors[0]}")
+    
+    #m = np.array(govectors)
+    m = np.vstack(veclist )
+    #return govectors
+    return m, genelist
+    
 
 def parse_goa_gaf(config, infile=None):
     '''
